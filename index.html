@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Prospección Ibarra Quezada</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+html { color-scheme: light; }
+body { margin: 0; }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+[hidden] { display: none !important; }
+
+/* Layout: barra superior con resumen del día, pestañas, y vistas (lista de hoy, tableros por etapa, referidos, plantillas); ficha del contacto como panel lateral. */
+:root {
+  --bg: #f3f4f1;
+  --surface: #ffffff;
+  --surface-2: #e9ebe6;
+  --line: #d5d9d1;
+  --fg: #1d2420;
+  --muted: #5d675f;
+  --accent: #1f5c4a;
+  --accent-ink: #ffffff;
+  --accent-soft: #dbe9e2;
+  --due: #a3401f;
+  --due-soft: #f6e1d8;
+  --today: #8a6410;
+  --today-soft: #f5ead0;
+  --ok: #2f6d3c;
+  --socio: #29507a;
+  --socio-soft: #dde6f1;
+  --cliente: #6b3f72;
+  --cliente-soft: #ece0ee;
+  --shadow: 0 10px 30px rgba(20, 30, 25, .18);
+  --f-display: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151a18; --surface: #1d2421; --surface-2: #252d29; --line: #34403a;
+    --fg: #e6ebe7; --muted: #9aa69e; --accent: #6fbf9f; --accent-ink: #0d1a15; --accent-soft: #23392f;
+    --due: #f08a65; --due-soft: #3c2219; --today: #e2b75a; --today-soft: #36301a; --ok: #7cc58b;
+    --socio: #8db4e0; --socio-soft: #1f2d3d; --cliente: #cf9bd6; --cliente-soft: #33233a;
+    --shadow: 0 10px 30px rgba(0,0,0,.5); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151a18; --surface: #1d2421; --surface-2: #252d29; --line: #34403a;
+  --fg: #e6ebe7; --muted: #9aa69e; --accent: #6fbf9f; --accent-ink: #0d1a15; --accent-soft: #23392f;
+  --due: #f08a65; --due-soft: #3c2219; --today: #e2b75a; --today-soft: #36301a; --ok: #7cc58b;
+  --socio: #8db4e0; --socio-soft: #1f2d3d; --cliente: #cf9bd6; --cliente-soft: #33233a;
+  --shadow: 0 10px 30px rgba(0,0,0,.5); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 14px; line-height: 1.45; }
+.wrap { max-width: 1280px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 60px; display: grid; gap: 18px; }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; text-wrap: balance; margin: 0; }
+h1 { font-size: 1.6rem; letter-spacing: -.01em; }
+h2 { font-size: 1.2rem; }
+h3 { font-size: 1rem; }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.small { font-size: .82rem; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
+.eyebrow { font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.status { font-size: .8rem; color: var(--muted); }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 2px; }
+.kpi b { font-family: var(--f-mono); font-size: 1.4rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.kpi.due b { color: var(--due); }
+.kpi.today b { color: var(--today); }
+
+nav.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+nav.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+nav.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+nav.tabs .count { font-family: var(--f-mono); font-size: .75rem; margin-left: 4px; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.toolbar input[type=search] { flex: 1 1 220px; min-width: 0; }
+input, select, textarea { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; width: 100%; }
+textarea { min-height: 80px; resize: vertical; }
+.btn { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 11px; font-weight: 500; white-space: nowrap; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.warn { color: var(--due); }
+.btn.sm { padding: 3px 8px; font-size: .8rem; }
+.btn:disabled { opacity: .5; cursor: default; }
+
+.pill { display: inline-block; font-size: .72rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.pill.socio { background: var(--socio-soft); color: var(--socio); }
+.pill.cliente { background: var(--cliente-soft); color: var(--cliente); }
+.pill.stage { background: var(--surface-2); color: var(--muted); }
+.pill.due { background: var(--due-soft); color: var(--due); }
+.pill.today { background: var(--today-soft); color: var(--today); }
+
+/* Hoy */
+.agenda { display: grid; gap: 18px; }
+.agenda section { display: grid; gap: 8px; }
+.row { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 6px; padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; }
+.row.due { border-left-color: var(--due); }
+.row.today { border-left-color: var(--today); }
+.row .who { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; min-width: 0; }
+.row .who a.name { font-weight: 600; color: var(--fg); text-decoration: none; cursor: pointer; }
+.row .who a.name:hover { text-decoration: underline; }
+.row .what { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--muted); }
+.row .what strong { color: var(--fg); font-weight: 500; }
+.row .acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: end; }
+@media (max-width: 640px) { .row { grid-template-columns: 1fr; } .row .acts { justify-content: start; } }
+.empty { border: 1px dashed var(--line); border-radius: 8px; padding: 18px; color: var(--muted); text-align: center; }
+
+/* Tablero */
+.board-wrap { overflow-x: auto; padding-bottom: 8px; }
+.board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 1fr); gap: 10px; min-width: min-content; }
+.col { background: var(--surface-2); border-radius: 8px; padding: 8px; display: grid; gap: 8px; align-content: start; min-height: 120px; }
+.col h3 { font-family: var(--f-body); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); display: flex; justify-content: space-between; padding: 2px 4px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; text-align: left; display: grid; gap: 3px; width: 100%; }
+.card:hover { border-color: var(--accent); }
+.card .n { font-weight: 600; }
+.card .e { font-size: .8rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .d { font-size: .76rem; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+/* Tablas */
+.tbl-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; min-width: 640px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; background: var(--surface-2); }
+td.num, th.num { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: 0; }
+
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.box { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.tpl { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.tpl:first-of-type { border-top: 0; padding-top: 0; }
+.tpl pre { white-space: pre-wrap; font-family: var(--f-body); margin: 0; background: var(--surface-2); padding: 10px; border-radius: 6px; }
+
+/* Panel */
+.scrim { position: fixed; inset: 0; background: rgba(10, 15, 12, .45); z-index: 20; }
+aside.panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(520px, 100%); background: var(--bg); box-shadow: var(--shadow); z-index: 21; overflow-y: auto; padding: calc(env(safe-area-inset-top, 0px) + 18px) 18px calc(env(safe-area-inset-bottom, 0px) + 30px); display: grid; gap: 14px; align-content: start; }
+.panel-head { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fields .full { grid-column: 1 / -1; }
+@media (max-width: 480px) { .fields { grid-template-columns: 1fr; } }
+label.f { display: grid; gap: 3px; font-size: .78rem; color: var(--muted); font-weight: 500; min-width: 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.next { background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; }
+.hist { display: grid; gap: 6px; }
+.hist div { display: grid; grid-template-columns: 92px 1fr; gap: 8px; font-size: .85rem; }
+.hist time { font-family: var(--f-mono); color: var(--muted); font-size: .78rem; }
+.sub { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; gap: 8px; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 6px; z-index: 40; font-size: .85rem; max-width: calc(100% - 32px); }
+.banner { background: var(--today-soft); color: var(--fg); border-radius: 8px; padding: 10px 12px; font-size: .85rem; }
+@media (prefers-reduced-motion: no-preference) { aside.panel { animation: slide .18s ease-out; } @keyframes slide { from { transform: translateX(24px); opacity: .6; } } }
+
+.login { max-width: 380px; margin: 12vh auto 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 22px; display: grid; gap: 12px; }
+.userbox { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="wrap" id="loginView" hidden>
+  <form class="login" id="loginForm">
+    <div class="eyebrow">Ibarra Quezada Abogados</div>
+    <h1>Prospección</h1>
+    <p class="muted small">Escribe tu correo y te mandamos un link para entrar.</p>
+    <label class="f">Correo<input type="email" id="loginEmail" required autocomplete="email"></label>
+    <button class="btn primary" type="submit" id="loginBtn">Enviar link de acceso</button>
+    <p class="small muted" id="loginMsg"></p>
+  </form>
+</div>
+
+<div class="wrap" id="appView" hidden>
+  <header class="top">
+    <div>
+      <div class="eyebrow">Ibarra Quezada Abogados</div>
+      <h1>Prospección y socios referidores</h1>
+    </div>
+    <div class="toolbar">
+      <span class="status" id="status">Cargando…</span>
+      <button class="btn primary" id="btnNuevo">+ Contacto</button>
+      <button class="btn" id="btnSalir">Salir</button>
+    </div>
+  </header>
+  <div class="banner" id="banner" hidden></div>
+  <div class="kpis" id="kpis"></div>
+  <nav class="tabs" role="tablist" id="tabs">
+    <button role="tab" data-tab="hoy" aria-selected="true">Hoy</button>
+    <button role="tab" data-tab="socio" aria-selected="false">Socios contadores</button>
+    <button role="tab" data-tab="cliente" aria-selected="false">Clientes PyME</button>
+    <button role="tab" data-tab="referidos" aria-selected="false">Referidos y comisiones</button>
+    <button role="tab" data-tab="plantillas" aria-selected="false">Plantillas</button>
+  </nav>
+  <main id="view"></main>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="panel" id="panel" hidden aria-label="Ficha del contacto"></aside>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
