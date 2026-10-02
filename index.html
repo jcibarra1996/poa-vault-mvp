@@ -169,9 +169,10 @@ label.f { display: grid; gap: 3px; font-size: .78rem; color: var(--muted); font-
   <form class="login" id="loginForm">
     <div class="eyebrow">Ibarra Quezada Abogados</div>
     <h1>Prospección</h1>
-    <p class="muted small">Escribe tu correo y te mandamos un link para entrar.</p>
     <label class="f">Correo<input type="email" id="loginEmail" required autocomplete="email"></label>
-    <button class="btn primary" type="submit" id="loginBtn">Enviar link de acceso</button>
+    <label class="f">Contraseña<input type="password" id="loginPass" autocomplete="current-password"></label>
+    <button class="btn primary" type="submit" id="loginBtn">Entrar</button>
+    <button class="btn" type="button" id="linkBtn">Mandarme un link por correo</button>
     <p class="small muted" id="loginMsg"></p>
   </form>
 </div>
@@ -185,10 +186,16 @@ label.f { display: grid; gap: 3px; font-size: .78rem; color: var(--muted); font-
     <div class="toolbar">
       <span class="status" id="status">Cargando…</span>
       <button class="btn primary" id="btnNuevo">+ Contacto</button>
+      <button class="btn" id="btnPass">Contraseña</button>
       <button class="btn" id="btnSalir">Salir</button>
     </div>
   </header>
   <div class="banner" id="banner" hidden></div>
+  <form class="sub" id="passForm" hidden>
+    <h3>Cambiar contraseña</h3>
+    <div class="toolbar"><input type="password" id="newPass" minlength="8" required placeholder="Nueva contraseña (mínimo 8 caracteres)" autocomplete="new-password"><button class="btn primary" type="submit">Guardar</button><button class="btn" type="button" id="passCancel">Cancelar</button></div>
+    <p class="small muted" id="passMsg"></p>
+  </form>
   <div class="kpis" id="kpis"></div>
   <nav class="tabs" role="tablist" id="tabs">
     <button role="tab" data-tab="hoy" aria-selected="true">Hoy</button>

@@ -519,13 +519,33 @@
     if (session && !iniciado) { iniciado = true; render(); cargar(); }
     if (!session) { iniciado = false; state.cargado = false; state.contactos = []; state.plantillas = []; state.referidos = []; cerrar(); }
   }
+  const loginMsg = (t) => ($("#loginMsg").textContent = t);
   $("#loginForm").onsubmit = async (e) => {
     e.preventDefault();
-    const email = $("#loginEmail").value.trim(); if (!email) return;
-    $("#loginBtn").disabled = true; $("#loginMsg").textContent = "Enviando…";
-    const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname } });
+    const email = $("#loginEmail").value.trim(), password = $("#loginPass").value;
+    if (!email) return;
+    if (!password) { loginMsg("Escribe tu contraseña, o usa “Mandarme un link por correo”."); return; }
+    $("#loginBtn").disabled = true; loginMsg("Entrando…");
+    const { error } = await sb.auth.signInWithPassword({ email, password });
     $("#loginBtn").disabled = false;
-    $("#loginMsg").textContent = error ? `No se pudo enviar el link: ${error.message}` : "Listo. Revisa tu correo y abre el link desde este mismo navegador.";
+    loginMsg(error ? (error.message === "Invalid login credentials" ? "Correo o contraseña incorrectos." : `No se pudo entrar: ${error.message}`) : "");
+  };
+  $("#linkBtn").onclick = async () => {
+    const email = $("#loginEmail").value.trim(); if (!email) { loginMsg("Escribe tu correo primero."); return; }
+    $("#linkBtn").disabled = true; loginMsg("Enviando…");
+    const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: false } });
+    $("#linkBtn").disabled = false;
+    loginMsg(error ? (/rate limit/i.test(error.message) ? "Se alcanzó el límite de correos por hora. Entra con tu contraseña o intenta más tarde." : `No se pudo enviar el link: ${error.message}`) : "Listo. Revisa tu correo y abre el link desde este mismo navegador.");
+  };
+  $("#btnPass").onclick = () => { $("#passForm").hidden = !$("#passForm").hidden; $("#passMsg").textContent = ""; };
+  $("#passCancel").onclick = () => { $("#passForm").hidden = true; };
+  $("#passForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const password = $("#newPass").value;
+    if (password.length < 8) { $("#passMsg").textContent = "Usa al menos 8 caracteres."; return; }
+    const { error } = await sb.auth.updateUser({ password });
+    if (error) { $("#passMsg").textContent = `No se pudo cambiar: ${error.message}`; return; }
+    $("#newPass").value = ""; $("#passForm").hidden = true; toast("Contraseña actualizada");
   };
   $("#btnSalir").onclick = () => sb.auth.signOut();
   sb.auth.onAuthStateChange((_ev, session) => mostrar(session));
