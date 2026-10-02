@@ -35,7 +35,7 @@
     if (c.etapa === "Solicitud enviada") return "solicitud";
     if (c.etapa === "Conectado") return "aceptado";
     if (c.etapa === "Mensaje enviado") return "mensaje";
-    if (c.etapa === "Frío") return (c.historial || []).some((h) => h.texto === "Respondió") ? "respondio" : "mensaje";
+    if (c.etapa === "Frío") return c.fechaRespuesta || (c.historial || []).some((h) => h.texto === "Respondió") ? "respondio" : "mensaje";
     return "respondio";
   };
   const pillEstado = (c) => {
@@ -45,7 +45,7 @@
     return `<span class="pill est-${k}">${e.corto}${extra}</span>`;
   };
 
-  const state = { contactos: [], plantillas: [], referidos: [], tab: "hoy", q: "", filtro: "", abierto: null, db: null, cargado: false };
+  const state = { contactos: [], plantillas: [], referidos: [], tab: "prospectos", q: "", filtro: "", tipo: "", orden: "estado", abierto: null, db: null, cargado: false };
   try { const t = localStorage.getItem("iq-tab"); if (t) state.tab = t; } catch (e) {}
 
   // ---------- Utilidades ----------
@@ -107,7 +107,7 @@
       let fecha = addDays(primer, CADENCIA[idx]);
       if (diffDays(fecha, h) < 1) fecha = addDays(h, 1);
       const accion = toques >= CADENCIA.length ? "Sin respuesta tras 3 mensajes: pasar a Frío" : `Seguimiento ${toques} si no responde`;
-      await guardar(c.id, { etapa: "Mensaje enviado", primerMensaje: primer, toques, ultimoContacto: h, proximaFecha: fecha, proximaAccion: accion }, `Mensaje enviado (#${toques})`);
+      await guardar(c.id, { etapa: "Mensaje enviado", primerMensaje: primer, toques, fechaMensaje: c.fechaMensaje || h, fechaAcepto: c.fechaAcepto || h, ultimoContacto: h, proximaFecha: fecha, proximaAccion: accion }, `Mensaje enviado (#${toques})`);
     } else {
       const dias = c.etapa === "Refiriendo" ? 30 : c.etapa === "Cliente" ? 90 : 4;
       const accion = c.etapa === "Refiriendo" ? "Toque mensual" : c.etapa === "Cliente" ? "Check-in trimestral y pedir referidos" : c.proximaAccion || "Dar seguimiento";
@@ -119,7 +119,7 @@
   async function respondio(c) {
     const temprana = ["Solicitud enviada", "Conectado", "Mensaje enviado", "Frío"].includes(c.etapa);
     const etapa = temprana ? "En conversación" : c.etapa;
-    await guardar(c.id, { etapa, toques: 0, primerMensaje: "", ultimoContacto: hoy(), proximaFecha: addDays(hoy(), 1), proximaAccion: "Contestar y proponer reunión" }, "Respondió");
+    await guardar(c.id, { etapa, fechaRespuesta: c.fechaRespuesta || hoy(), fechaMensaje: c.fechaMensaje || c.primerMensaje || "", toques: 0, primerMensaje: "", ultimoContacto: hoy(), proximaFecha: addDays(hoy(), 1), proximaAccion: "Contestar y proponer reunión" }, "Respondió");
     toast("Marcado como respondió");
   }
 
@@ -129,7 +129,8 @@
     document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === state.tab)));
     const v = $("#view");
     if (!state.cargado) { v.innerHTML = `<div class="empty">Cargando tus contactos…</div>`; return; }
-    if (state.tab === "hoy") v.innerHTML = vistaHoy();
+    if (state.tab === "prospectos") v.innerHTML = vistaProspectos();
+    else if (state.tab === "hoy") v.innerHTML = vistaHoy();
     else if (state.tab === "socio" || state.tab === "cliente") v.innerHTML = vistaTablero(state.tab);
     else if (state.tab === "referidos") v.innerHTML = vistaReferidos();
     else v.innerHTML = vistaPlantillas();
@@ -195,6 +196,50 @@
       ${sec("Próximos 7 días", sem, "Nada en los próximos 7 días.")}
       ${state.filtro && despues.length ? sec("Más adelante", despues, "") : ""}
       ${sinFecha.length ? sec("Sin siguiente paso", sinFecha, "") : ""}
+    </div>`;
+  }
+
+  const PASOS = [["Solicitud", "fechaSolicitud"], ["Aceptó", "fechaAcepto"], ["Mensaje", "fechaMensaje"], ["Respondió", "fechaRespuesta"]];
+  const ORDEN_EST = { respondio: 0, mensaje: 1, aceptado: 2, solicitud: 3 };
+  function progreso(c) {
+    const k = estadoDe(c);
+    const alcanzado = { solicitud: 0, aceptado: 1, mensaje: 2, respondio: 3 }[k] ?? -1;
+    return `<ol class="track">${PASOS.map(([lbl, campo], i) => {
+      const f = c[campo];
+      const cls = i < alcanzado || (i === alcanzado && i === 3) ? "done" : i === alcanzado ? "cur" : "todo";
+      return `<li class="${cls}"><span class="dot"></span><span class="t">${lbl}</span><span class="fd">${f ? fmt(f) : i <= alcanzado ? "s/f" : "—"}</span></li>`;
+    }).join("")}</ol>`;
+  }
+  function vistaProspectos() {
+    const q = state.q.toLowerCase();
+    const p = state.tipo || "";
+    const lista = state.contactos.filter((c) => c.etapa !== "Descartado" && (!p || c.pipeline === p) && (!state.filtro || estadoDe(c) === state.filtro) && (!q || `${c.nombre} ${c.empresa} ${c.ubicacion} ${c.notas}`.toLowerCase().includes(q)));
+    const orden = state.orden || "estado";
+    lista.sort((a, b) => orden === "estado" ? (ORDEN_EST[estadoDe(a)] - ORDEN_EST[estadoDe(b)]) || (b.fechaSolicitud || "").localeCompare(a.fechaSolicitud || "") || a.nombre.localeCompare(b.nombre)
+      : orden === "antiguos" ? (a.fechaSolicitud || "9").localeCompare(b.fechaSolicitud || "9") || a.nombre.localeCompare(b.nombre)
+      : (b.fechaSolicitud || "").localeCompare(a.fechaSolicitud || "") || a.nombre.localeCompare(b.nombre));
+    const descartados = state.contactos.filter((c) => c.etapa === "Descartado").length;
+    const filas = lista.map((c) => {
+      const dias = c.fechaSolicitud ? diffDays(hoy(), c.fechaSolicitud) : null;
+      const u = urgencia(c);
+      return `<tr data-open="${c.id}" class="clic">
+        <td><div class="nm">${esc(c.nombre)}</div>${c.empresa ? `<div class="small muted ell">${esc(c.empresa)}</div>` : ""}</td>
+        <td><span class="pill ${c.pipeline}">${c.pipeline === "socio" ? "Socio" : "Cliente"}</span></td>
+        <td>${pillEstado(c)}<div class="small muted">${esc(c.etapa)}</div></td>
+        <td>${progreso(c)}</td>
+        <td class="num">${dias == null ? "—" : `${dias} d`}</td>
+        <td>${c.proximaFecha && c.etapa !== "Descartado" ? `<span class="pill ${u === "due" ? "due" : u === "today" ? "today" : "stage"}">${u === "due" ? "Vencido" : u === "today" ? "Hoy" : fmt(c.proximaFecha)}</span>` : ""}<div class="small">${esc(c.proximaAccion)}</div></td>
+      </tr>`;
+    }).join("");
+    return `<div style="display:grid;gap:12px">
+      <div class="toolbar">
+        <input type="search" id="q" placeholder="Buscar por nombre, empresa, ciudad o nota" value="${esc(state.q)}">
+        <select id="selTipo" style="width:auto"><option value="">Socios y clientes</option><option value="socio" ${p === "socio" ? "selected" : ""}>Solo socios</option><option value="cliente" ${p === "cliente" ? "selected" : ""}>Solo clientes</option></select>
+        <select id="selOrden" style="width:auto"><option value="estado" ${orden === "estado" ? "selected" : ""}>Ordenar por avance</option><option value="recientes" ${orden === "recientes" ? "selected" : ""}>Solicitud más reciente</option><option value="antiguos" ${orden === "antiguos" ? "selected" : ""}>Solicitud más antigua</option></select>
+      </div>
+      ${lista.length ? `<div class="tbl-wrap"><table class="prospectos"><thead><tr><th>Prospecto</th><th>Tipo</th><th>Estado</th><th>Avance y fechas</th><th class="num">Desde solicitud</th><th>Siguiente paso</th></tr></thead><tbody>${filas}</tbody></table></div>`
+        : `<div class="empty">Ningún prospecto coincide con el filtro.</div>`}
+      <p class="small muted">${lista.length} prospectos${descartados ? ` · ${descartados} descartados no se muestran` : ""}. Clic en una fila para abrir la ficha y corregir fechas.</p>
     </div>`;
   }
 
@@ -353,6 +398,10 @@
           <label class="f">Siguiente acción<input id="fAccion" value="${esc(c.proximaAccion)}"></label>
           <label class="f">Fecha<input id="fFecha" type="date" value="${esc(c.proximaFecha)}"></label>
           ${c.pipeline === "socio" ? `<label class="f">Comisión acordada %<input id="fPct" type="number" min="0" max="100" step="0.5" value="${c.comisionPct ?? ""}" placeholder="Ej. 10"></label>` : `<label class="f">Referido por<select id="fRefPor"><option value="">Nadie / directo</option>${socios().map((s) => `<option value="${s.id}" ${c.referidoPor === s.id ? "selected" : ""}>${esc(s.nombre)}</option>`).join("")}</select></label>`}
+          <label class="f">Solicitud enviada<input id="fFSol" type="date" value="${esc(c.fechaSolicitud ?? (nuevo ? hoy() : ""))}"></label>
+          <label class="f">Aceptó<input id="fFAce" type="date" value="${esc(c.fechaAcepto)}"></label>
+          <label class="f">Primer mensaje<input id="fFMsg" type="date" value="${esc(c.fechaMensaje)}"></label>
+          <label class="f">Respondió<input id="fFRes" type="date" value="${esc(c.fechaRespuesta)}"></label>
           <label class="f full">Notas<textarea id="fNotas">${esc(c.notas)}</textarea></label>
         </div>
         <div class="actions"><button class="btn primary" type="submit">${nuevo ? "Crear contacto" : "Guardar cambios"}</button>${nuevo ? "" : `<button class="btn warn" type="button" id="pBorrar">Borrar contacto</button>`}</div>
@@ -383,6 +432,7 @@
         empresa: $("#fEmpresa").value.trim(), ubicacion: $("#fUbic").value.trim(), subtipo: $("#fSub").value.trim(),
         linkedin: $("#fLink").value.trim(), email: $("#fEmail").value.trim(), telefono: $("#fTel").value.trim(),
         proximaAccion: $("#fAccion").value.trim(), proximaFecha: $("#fFecha").value, notas: $("#fNotas").value,
+        fechaSolicitud: $("#fFSol").value, fechaAcepto: $("#fFAce").value, fechaMensaje: $("#fFMsg").value, fechaRespuesta: $("#fFRes").value,
       };
       if ($("#fPct")) data.comisionPct = $("#fPct").value === "" ? null : Number($("#fPct").value);
       if ($("#fRefPor")) data.referidoPor = $("#fRefPor").value;
@@ -390,7 +440,7 @@
       if (nuevo) {
         if (!state.db) { toast("Sin conexión a la base de datos"); return; }
         try {
-          const ref = await state.db.collection("contactos").add({ ...data, toques: 0, primerMensaje: "", alta: hoy(), actualizado: hoy(), historial: [{ fecha: hoy(), texto: `Alta en ${data.etapa}` }] });
+          const ref = await state.db.collection("contactos").add({ ...data, toques: 0, primerMensaje: "", alta: hoy(), fechaSolicitud: data.fechaSolicitud || (data.etapa === "Solicitud enviada" ? hoy() : ""), actualizado: hoy(), historial: [{ fecha: hoy(), texto: `Alta en ${data.etapa}` }] });
           state.abierto = ref.id; toast("Contacto creado");
         } catch (err) { toast("No se pudo crear: " + (err.code || err.message)); }
       } else {
@@ -438,7 +488,7 @@
   // ---------- Eventos globales ----------
   document.addEventListener("click", async (e) => {
     const f = e.target.closest("[data-filtro]");
-    if (f) { const k = f.dataset.filtro; state.filtro = state.filtro === k ? "" : k; if (!["hoy", "socio", "cliente"].includes(state.tab)) state.tab = "hoy"; render(); return; }
+    if (f) { const k = f.dataset.filtro; state.filtro = state.filtro === k ? "" : k; if (!["prospectos", "hoy", "socio", "cliente"].includes(state.tab)) state.tab = "prospectos"; render(); return; }
     const t = e.target.closest("[data-tab],[data-open],[data-act],[data-tpl-edit],[data-tpl-copy],[data-ref-del]");
     if (!t) return;
     if (t.dataset.tab) { state.tab = t.dataset.tab; try { localStorage.setItem("iq-tab", state.tab); } catch (err) {} render(); return; }
@@ -448,7 +498,7 @@
       $("#panel").dataset.id = "";
       if (t.dataset.act === "msg") await mensajeEnviado(c);
       else if (t.dataset.act === "resp") await respondio(c);
-      else if (t.dataset.act === "acepto") { await moverEtapa(c, "Conectado", "Aceptó la solicitud"); toast("Conectado: toca mandarle mensaje hoy"); }
+      else if (t.dataset.act === "acepto") { await guardar(c.id, { ...cambiosDeEtapa(c, "Conectado"), fechaAcepto: hoy() }, "Aceptó la solicitud"); toast("Conectado: toca mandarle mensaje hoy"); }
       else if (t.dataset.act === "frio") { await moverEtapa(c, "Frío", "Sin respuesta tras 3 mensajes"); toast("Movido a Frío. Reintento en 60 días."); }
       return;
     }
@@ -467,6 +517,8 @@
 
   document.addEventListener("change", async (e) => {
     const el = e.target;
+    if (el.id === "selTipo") { state.tipo = el.value; render(); return; }
+    if (el.id === "selOrden") { state.orden = el.value; render(); return; }
     if (el.id === "rSocio") { const s = byId(el.value); if (s && s.comisionPct != null) $("#rPct").value = s.comisionPct; }
     if (el.dataset.refPag) { try { await state.db.collection("referidos").doc(el.dataset.refPag).update({ pagada: el.checked }); } catch (err) { toast("No se pudo guardar"); } }
     if (el.dataset.refHon) { try { await state.db.collection("referidos").doc(el.dataset.refHon).update({ honorarios: Number(el.value) || 0 }); } catch (err) { toast("No se pudo guardar"); } }
@@ -507,9 +559,9 @@
 
   // ---------- Supabase ----------
   const TABLAS = { contactos: "crm_contactos", plantillas: "crm_plantillas", referidos: "crm_referidos" };
-  const SNAKE = { proximaAccion: "proxima_accion", proximaFecha: "proxima_fecha", primerMensaje: "primer_mensaje", ultimoContacto: "ultimo_contacto", comisionPct: "comision_pct", referidoPor: "referido_por", socioId: "socio_id" };
+  const SNAKE = { proximaAccion: "proxima_accion", proximaFecha: "proxima_fecha", fechaSolicitud: "fecha_solicitud", fechaAcepto: "fecha_acepto", fechaMensaje: "fecha_mensaje", fechaRespuesta: "fecha_respuesta", primerMensaje: "primer_mensaje", ultimoContacto: "ultimo_contacto", comisionPct: "comision_pct", referidoPor: "referido_por", socioId: "socio_id" };
   const CAMEL = Object.fromEntries(Object.entries(SNAKE).map(([k, v]) => [v, k]));
-  const NULLABLES = new Set(["proxima_fecha", "primer_mensaje", "ultimo_contacto", "referido_por", "socio_id", "fecha", "alta"]);
+  const NULLABLES = new Set(["proxima_fecha", "fecha_solicitud", "fecha_acepto", "fecha_mensaje", "fecha_respuesta", "primer_mensaje", "ultimo_contacto", "referido_por", "socio_id", "fecha", "alta"]);
   const toRow = (o) => { const r = {}; for (const [k, v] of Object.entries(o)) { if (k === "id") continue; const sk = SNAKE[k] || k; r[sk] = NULLABLES.has(sk) && v === "" ? null : v; } return r; };
   const fromRow = (r) => { const o = {}; for (const [k, v] of Object.entries(r)) { const ck = CAMEL[k] || k; o[ck] = NULLABLES.has(k) && v == null ? "" : v; } return o; };
   const sb = window.supabase.createClient(window.IQ_CONFIG.supabaseUrl, window.IQ_CONFIG.supabaseKey, { auth: { persistSession: true, detectSessionInUrl: true, flowType: "pkce" } });
