@@ -533,7 +533,7 @@
   $("#linkBtn").onclick = async () => {
     const email = $("#loginEmail").value.trim(); if (!email) { loginMsg("Escribe tu correo primero."); return; }
     $("#linkBtn").disabled = true; loginMsg("Enviando…");
-    const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: false } });
+    const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: true } });
     $("#linkBtn").disabled = false;
     loginMsg(error ? (/rate limit/i.test(error.message) ? "Se alcanzó el límite de correos por hora. Entra con tu contraseña o intenta más tarde." : `No se pudo enviar el link: ${error.message}`) : "Listo. Revisa tu correo y abre el link desde este mismo navegador.");
   };
