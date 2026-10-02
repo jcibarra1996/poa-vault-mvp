@@ -23,8 +23,29 @@
   // Cadencia estándar sin respuesta: días desde el primer mensaje
   const CADENCIA = [4, 10, 21];
   const CERRADAS = ["Descartado"];
+  // Estado del contacto, independiente del pipeline: qué tan lejos llegó la conversación
+  const ESTADOS = [
+    { key: "solicitud", label: "Solicitud enviada", corto: "Solicitud", desc: "No ha aceptado" },
+    { key: "aceptado", label: "Aceptó, falta mensaje", corto: "Aceptó", desc: "Toca escribirle" },
+    { key: "mensaje", label: "Mensaje sin respuesta", corto: "Sin respuesta", desc: "Esperando que conteste" },
+    { key: "respondio", label: "Respondió", corto: "Respondió", desc: "Ya hay conversación" },
+  ];
+  const estadoDe = (c) => {
+    if (c.etapa === "Descartado") return null;
+    if (c.etapa === "Solicitud enviada") return "solicitud";
+    if (c.etapa === "Conectado") return "aceptado";
+    if (c.etapa === "Mensaje enviado") return "mensaje";
+    if (c.etapa === "Frío") return (c.historial || []).some((h) => h.texto === "Respondió") ? "respondio" : "mensaje";
+    return "respondio";
+  };
+  const pillEstado = (c) => {
+    const k = estadoDe(c); if (!k) return `<span class="pill stage">Descartado</span>`;
+    const e = ESTADOS.find((x) => x.key === k);
+    const extra = k === "mensaje" && c.toques ? ` · ${c.toques}/${CADENCIA.length}` : "";
+    return `<span class="pill est-${k}">${e.corto}${extra}</span>`;
+  };
 
-  const state = { contactos: [], plantillas: [], referidos: [], tab: "hoy", q: "", abierto: null, db: null, cargado: false };
+  const state = { contactos: [], plantillas: [], referidos: [], tab: "hoy", q: "", filtro: "", abierto: null, db: null, cargado: false };
   try { const t = localStorage.getItem("iq-tab"); if (t) state.tab = t; } catch (e) {}
 
   // ---------- Utilidades ----------
@@ -124,9 +145,15 @@
     $("#kpis").innerHTML = `
       <div class="kpi due"><span class="small muted">Vencidos</span><b>${vencidos}</b></div>
       <div class="kpi today"><span class="small muted">Para hoy</span><b>${deHoy}</b></div>
-      <div class="kpi"><span class="small muted">Contactos activos</span><b>${activos.length}</b></div>
       <div class="kpi"><span class="small muted">Socios con acuerdo</span><b>${sociosActivos}</b></div>
       <div class="kpi"><span class="small muted">Comisiones por pagar</span><b>${money(pendiente)}</b></div>`;
+    const n = (k) => activos.filter((c) => estadoDe(c) === k).length;
+    const escritos = n("mensaje") + n("respondio");
+    const tasa = escritos ? Math.round((n("respondio") / escritos) * 100) : 0;
+    $("#embudo").innerHTML = ESTADOS.map((e) => `
+      <button class="etapa-est est-${e.key}" data-filtro="${e.key}" aria-pressed="${state.filtro === e.key}">
+        <span class="lbl">${e.label}</span><b>${n(e.key)}</b><span class="small muted">${e.desc}</span>
+      </button>`).join("") + `<div class="tasa small muted">Tasa de respuesta: <b class="mono">${tasa}%</b> de ${escritos} a los que ya escribiste${state.filtro ? ` · <button class="btn sm" data-filtro="">Quitar filtro</button>` : ""}</div>`;
   }
 
   function filaAgenda(c) {
@@ -137,7 +164,8 @@
     return `<div class="row ${u === "due" ? "due" : u === "today" ? "today" : ""}">
       <div class="who"><a class="name" data-open="${c.id}">${esc(c.nombre)}</a>
         <span class="pill ${c.pipeline}">${c.pipeline === "socio" ? "Socio" : "Cliente"}</span>
-        <span class="pill stage">${esc(c.etapa)}</span>
+        ${pillEstado(c)}
+        ${["Solicitud enviada", "Conectado", "Mensaje enviado"].includes(c.etapa) ? "" : `<span class="pill stage">${esc(c.etapa)}</span>`}
         ${c.empresa ? `<span class="small muted">${esc(c.empresa)}</span>` : ""}</div>
       <div class="acts">
         ${c.linkedin ? `<a class="btn sm" href="${esc(c.linkedin)}" target="_blank" rel="noopener">LinkedIn ↗</a>` : ""}
@@ -151,31 +179,35 @@
   }
 
   function vistaHoy() {
-    const act = state.contactos.filter((c) => !CERRADAS.includes(c.etapa) && c.proximaFecha);
+    const pasa = (c) => !state.filtro || estadoDe(c) === state.filtro;
+    const act = state.contactos.filter((c) => !CERRADAS.includes(c.etapa) && c.proximaFecha && pasa(c));
     const sort = (a, b) => a.proximaFecha.localeCompare(b.proximaFecha) || a.nombre.localeCompare(b.nombre);
     const venc = act.filter((c) => urgencia(c) === "due").sort(sort);
     const hoyL = act.filter((c) => urgencia(c) === "today").sort(sort);
     const sem = act.filter((c) => urgencia(c) === "week").sort(sort);
-    const sinFecha = state.contactos.filter((c) => !CERRADAS.includes(c.etapa) && !c.proximaFecha);
+    const despues = act.filter((c) => urgencia(c) === "later").sort(sort);
+    const sinFecha = state.contactos.filter((c) => !CERRADAS.includes(c.etapa) && !c.proximaFecha && pasa(c));
     const sec = (t, arr, vacio) => `<section><h2>${t} <span class="mono small muted">${arr.length}</span></h2>${arr.length ? arr.map(filaAgenda).join("") : `<div class="empty">${vacio}</div>`}</section>`;
     if (!state.contactos.length) return `<div class="empty">Todavía no hay contactos. Usa “+ Contacto” para agregar el primero.</div>`;
     return `<div class="agenda">
       ${sec("Vencidos", venc, "Nada vencido. Vas al día.")}
       ${sec("Hoy", hoyL, "Nada programado para hoy.")}
       ${sec("Próximos 7 días", sem, "Nada en los próximos 7 días.")}
+      ${state.filtro && despues.length ? sec("Más adelante", despues, "") : ""}
       ${sinFecha.length ? sec("Sin siguiente paso", sinFecha, "") : ""}
     </div>`;
   }
 
   function vistaTablero(p) {
     const q = state.q.toLowerCase();
-    const lista = state.contactos.filter((c) => c.pipeline === p && (!q || `${c.nombre} ${c.empresa} ${c.ubicacion} ${c.notas}`.toLowerCase().includes(q)));
+    const lista = state.contactos.filter((c) => c.pipeline === p && (!state.filtro || estadoDe(c) === state.filtro) && (!q || `${c.nombre} ${c.empresa} ${c.ubicacion} ${c.notas}`.toLowerCase().includes(q)));
     const cols = ETAPAS[p].map((et) => {
       const cs = lista.filter((c) => c.etapa === et).sort((a, b) => (a.proximaFecha || "9").localeCompare(b.proximaFecha || "9"));
       return `<div class="col"><h3><span>${esc(et)}</span><span class="mono">${cs.length}</span></h3>
         ${cs.map((c) => { const u = urgencia(c); return `<button class="card" data-open="${c.id}">
           <span class="n">${esc(c.nombre)}</span>
           ${c.empresa ? `<span class="e">${esc(c.empresa)}</span>` : ""}
+          <span class="d">${pillEstado(c)}</span>
           ${c.proximaFecha && !CERRADAS.includes(c.etapa) ? `<span class="d"><span class="pill ${u === "due" ? "due" : u === "today" ? "today" : "stage"}">${u === "due" ? "Vencido" : u === "today" ? "Hoy" : fmt(c.proximaFecha)}</span><span class="muted">${esc(c.proximaAccion)}</span></span>` : ""}
         </button>`; }).join("")}
       </div>`;
@@ -271,6 +303,7 @@
         <div style="display:grid;gap:4px;min-width:0">
           <span class="eyebrow">${nuevo ? "Nuevo contacto" : (c.pipeline === "socio" ? "Socio contador" : "Cliente PyME")}</span>
           <h2>${esc(c.nombre) || "Sin nombre"}</h2>
+          ${nuevo ? "" : `<div>${pillEstado(c)}</div>`}
           ${c.linkedin ? `<a href="${esc(c.linkedin)}" target="_blank" rel="noopener" class="small">Abrir perfil de LinkedIn ↗</a>` : ""}
         </div>
         <button class="btn" id="pCerrar" aria-label="Cerrar">Cerrar</button>
@@ -404,6 +437,8 @@
 
   // ---------- Eventos globales ----------
   document.addEventListener("click", async (e) => {
+    const f = e.target.closest("[data-filtro]");
+    if (f) { const k = f.dataset.filtro; state.filtro = state.filtro === k ? "" : k; if (!["hoy", "socio", "cliente"].includes(state.tab)) state.tab = "hoy"; render(); return; }
     const t = e.target.closest("[data-tab],[data-open],[data-act],[data-tpl-edit],[data-tpl-copy],[data-ref-del]");
     if (!t) return;
     if (t.dataset.tab) { state.tab = t.dataset.tab; try { localStorage.setItem("iq-tab", state.tab); } catch (err) {} render(); return; }
