@@ -99,3 +99,25 @@ test("sueño real: mainSleep, siesta, clásico editado a mano", () => {
   assert.equal(s.despertares, 5);
   assert.equal(s.etapas.ASLEEP, 400);
 });
+
+test("SpO2 de la noche: serie por minuto, mínimo, minutos <90 y caídas", async () => {
+  const { spo2PorNoche, valorSpo2 } = await import("../supabase/functions/fitbit-sync/google.ts");
+  assert.equal(valorSpo2({ sampleTime: {}, percentage: 96.5 }), 96.5);
+  assert.equal(valorSpo2({ sampleTime: {}, saturacionRara: "94" }), 94);
+  const d = new Dias();
+  d.poner("2026-10-21", { sueno: { inicio: "2026-10-21T05:00:00Z", fin: "2026-10-21T06:00:00Z" } as never });
+  const pts = [];
+  for (let m = 0; m < 60; m++) {
+    const v = m >= 30 && m < 33 ? 89 : 96; // una caída de 3 min
+    pts.push({ oxygenSaturation: { sampleTime: { physicalTime: new Date(Date.parse("2026-10-21T05:00:00Z") + m * 60000 + 5000).toISOString() }, percentage: v } });
+  }
+  pts.push({ oxygenSaturation: { sampleTime: { physicalTime: "2026-10-21T08:00:00Z" }, percentage: 80 } }); // fuera de la noche
+  spo2PorNoche(d, pts);
+  const o = d.lista()[0].spo2_noche!;
+  assert.equal(o.valores.length, 60);
+  assert.equal(o.minimo, 89);
+  assert.equal(o.bajo90, 3);
+  assert.equal(o.caidas, 1);
+  assert.equal(o.indice, 1);
+  assert.ok(o.promedio > 95 && o.promedio < 96);
+});

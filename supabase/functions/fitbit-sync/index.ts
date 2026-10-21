@@ -10,7 +10,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import {
   API, AUTH_URL, TOKEN_URL, SCOPES, DIARIOS, Dias, civil, filtroDiario, fusionar,
-  leerAzm, leerDiario, leerPasos, leerSueno, resumirFc, resumirSesion, sumarDias,
+  leerAzm, leerDiario, leerPasos, leerSueno, resumirFc, resumirSesion, spo2PorNoche, sumarDias,
 } from "./google.ts";
 
 // trim: un espacio o salto de línea al pegar el secreto en el panel hace que Google responda invalid_client
@@ -155,6 +155,7 @@ async function sincronizar(email: string, numDias: number) {
   const n = Math.max(1, Math.min(88, Math.round(numDias) || 7));
   const desde = sumarDias(hoy, -n), hasta = sumarDias(hoy, 2);
   const dias = new Dias();
+  let oxigeno: Obj[] = [];
   const tareas: [string, () => Promise<void>][] = [
     ["pasos", async () => leerPasos(dias, await rollupDiario(at, "steps", desde, hasta))],
     ["minutos en zona", async () => leerAzm(dias, await lista(at, "active-zone-minutes", `active_zone_minutes.interval.civil_start_time >= "${desde}T00:00:00" AND active_zone_minutes.interval.civil_start_time < "${hasta}T00:00:00"`, 10000))],
@@ -169,9 +170,15 @@ async function sincronizar(email: string, numDias: number) {
       console.log(`sleep: list=${crudos.length} [${noches(crudos)}] reconcile=${reconciliados.length} [${noches(reconciliados)}]`);
       leerSueno(dias, [...crudos, ...reconciliados]);
     }],
+    // Un día antes de `desde` para cubrir la noche que termina ese día
+    ["oxígeno", async () => {
+      oxigeno = await lista(at, "oxygen-saturation", `oxygen_saturation.sample_time.physical_time >= "${sumarDias(desde, -1)}T00:00:00Z"`, 10000);
+      if (oxigeno[0]) console.log("oxygen-saturation campos:", JSON.stringify(Object.keys(oxigeno[0].oxygenSaturation || oxigeno[0])));
+    }],
     ...DIARIOS.map((def): [string, () => Promise<void>] => [def.tipo, async () => leerDiario(dias, await lista(at, def.tipo, filtroDiario(def.tipo, desde, hasta), 1000), def)]),
   ];
   const res = await Promise.allSettled(tareas.map(([, f]) => f()));
+  spo2PorNoche(dias, oxigeno);
   const errores = res.flatMap((r, i) => (r.status === "rejected" ? [`${tareas[i][0]}: ${(r.reason as Error)?.message || r.reason}`] : []));
   if (errores.length === tareas.length) {
     await db.from("salud_conexion").update({ error: errores[0] }).eq("email", email);

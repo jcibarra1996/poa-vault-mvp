@@ -13,9 +13,13 @@ export type Sueno = {
   etapas: Record<string, number>; despertares: number | null; tipo: string;
   hipnograma: [string, string, string][]; editado: boolean; siesta: boolean;
 };
+export type Spo2Noche = {
+  inicio: string; paso: number; valores: (number | null)[];
+  promedio: number; minimo: number; bajo90: number; caidas: number; indice: number;
+};
 export type Dia = {
   fecha: string; pasos?: number; azm?: number; fc_reposo?: number; vfc?: number; spo2?: number; resp?: number;
-  temp?: number; temp_base?: number; sueno?: Sueno; crudo: Record<string, unknown>;
+  temp?: number; temp_base?: number; sueno?: Sueno; spo2_noche?: Spo2Noche; crudo: Record<string, unknown>;
 };
 // deno-lint-ignore no-explicit-any
 type Obj = Record<string, any>;
@@ -175,6 +179,54 @@ export function resumirSesion(fcs: Obj[], vfcs: Obj[], inicio: string, fin: stri
     ultimaMuestra: ultima ? new Date(ultima).toISOString() : null,
     completa: ultima >= b - 30000,
   };
+}
+
+// oxygen-saturation (Sample, una muestra por minuto mientras duermes). El nombre del campo del porcentaje no está
+// confirmado en la documentación: se prueban los probables y si no, el primer número entre 50 y 100.
+export function valorSpo2(o: Obj): number | undefined {
+  for (const k of ["percentage", "oxygenSaturationPercentage", "value"]) { const n = num(o?.[k]); if (n !== undefined) return n; }
+  for (const [k, v] of Object.entries(o || {})) {
+    if (/time|metadata/i.test(k)) continue;
+    const n = num(v);
+    if (n !== undefined && n > 50 && n <= 100) return n;
+  }
+  return undefined;
+}
+
+// Asigna a cada noche (ya leída con leerSueno) sus muestras de SpO2: serie por minuto, promedio, mínimo,
+// minutos por debajo de 90% y caídas de 3 puntos o más respecto a la mediana de los 10 minutos previos.
+export function spo2PorNoche(dias: Dias, puntos: Obj[]) {
+  const muestras = puntos
+    .map((p) => ({ ms: Date.parse(p.oxygenSaturation?.sampleTime?.physicalTime), v: valorSpo2(p.oxygenSaturation) }))
+    .filter((m): m is { ms: number; v: number } => !!m.ms && m.v !== undefined && m.v > 50 && m.v <= 100)
+    .sort((a, b) => a.ms - b.ms);
+  if (!muestras.length) return;
+  for (const d of dias.lista()) {
+    const s = d.sueno; if (!s?.inicio || !s.fin) continue;
+    const a = Date.parse(s.inicio), b = Date.parse(s.fin);
+    const dentro = muestras.filter((m) => m.ms >= a && m.ms < b);
+    if (dentro.length < 10) continue;
+    const n = Math.ceil((b - a) / 60000);
+    const suma = new Array(n).fill(0), cuenta = new Array(n).fill(0);
+    for (const m of dentro) { const i = Math.min(n - 1, Math.floor((m.ms - a) / 60000)); suma[i] += m.v; cuenta[i]++; }
+    const valores = suma.map((x, i) => (cuenta[i] ? Math.round((x / cuenta[i]) * 10) / 10 : null));
+    const vs = valores.filter((v): v is number => v != null);
+    let caidas = 0, enCaida = false;
+    valores.forEach((v, i) => {
+      if (v == null) return;
+      const previos = valores.slice(Math.max(0, i - 10), i).filter((x): x is number => x != null).sort((x, y) => x - y);
+      if (previos.length < 5) return;
+      const base = previos[previos.length >> 1];
+      if (v <= base - 3) { if (!enCaida) caidas++; enCaida = true; } else if (v >= base - 1) enCaida = false;
+    });
+    const horas = vs.length / 60;
+    d.spo2_noche = {
+      inicio: s.inicio, paso: 60, valores,
+      promedio: Math.round((vs.reduce((x, y) => x + y, 0) / vs.length) * 10) / 10,
+      minimo: Math.min(...vs), bajo90: vs.filter((v) => v < 90).length, caidas,
+      indice: horas ? Math.round((caidas / horas) * 10) / 10 : 0,
+    };
+  }
 }
 
 // Fusiona lo nuevo sobre lo que ya estaba guardado: un tipo que falló no borra el valor anterior

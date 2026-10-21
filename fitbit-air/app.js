@@ -1,7 +1,7 @@
 (() => {
   const P = window.Puntuaciones;
-  const state = { dias: [], puntos: new Map(), fecha: "", tab: "hoy", rango: 30, conexion: null, cargado: false, ocupado: false, mediciones: [], fcReciente: null };
-  try { const t = localStorage.getItem("salud-tab"); if (t) state.tab = t; const r = Number(localStorage.getItem("salud-rango")); if (r) state.rango = r; } catch (e) {}
+  const state = { dias: [], puntos: new Map(), fecha: "", tab: "hoy", rango: 30, conexion: null, cargado: false, ocupado: false, mediciones: [], fcReciente: null, puntaje: "recuperacion" };
+  try { const t = localStorage.getItem("salud-tab"); if (t) state.tab = t; const pz = localStorage.getItem("salud-puntaje"); if (pz) state.puntaje = pz; const r = Number(localStorage.getItem("salud-rango")); if (r) state.rango = r; } catch (e) {}
 
   // ---------- Utilidades ----------
   const $ = (s, r = document) => r.querySelector(s);
@@ -14,7 +14,7 @@
   const horaLocal = (ms, offset) => { const d = new Date(ms + offset * 1000); return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
   const fmtNum = (v, dec = 0) => (v == null ? "—" : Number(v).toLocaleString("es-MX", { maximumFractionDigits: dec, minimumFractionDigits: dec }));
   const tempDelta = (d) => { const t = num(d?.temp), b = num(d?.temp_base); return t != null && b != null ? t - b : null; };
-  const signo = (x, dec = 1) => (x == null ? "—" : `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(dec)}`);
+  const signo = (x, dec = 1) => (x == null ? "—" : `${x >= 0 ? "+" : "−"}${Math.abs(x).toLocaleString("es-MX", { minimumFractionDigits: dec, maximumFractionDigits: dec })}`);
   const media = (xs) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
 
   // ---------- Supabase ----------
@@ -31,7 +31,7 @@
   }
 
   async function cargarDatos() {
-    const { data, error } = await sb.from("salud_dias").select("fecha,pasos,azm,fc_reposo,vfc,spo2,resp,temp,temp_base,sueno").order("fecha");
+    const { data, error } = await sb.from("salud_dias").select("fecha,pasos,azm,fc_reposo,vfc,spo2,resp,temp,temp_base,sueno,spo2_noche").order("fecha");
     if (error) throw error;
     state.dias = data || [];
     state.puntos = new Map(P.calcular(state.dias).map((p) => [p.fecha, p]));
@@ -74,9 +74,10 @@
   function renderEstado() {
     const c = state.conexion;
     $("#btnSync").hidden = !c?.conectado; $("#btnDesc").hidden = !c?.conectado;
-    $("#btnSync").disabled = state.ocupado; $("#btnSync").textContent = state.ocupado ? "Sincronizando…" : "Sincronizar";
+    $("#btnSync").disabled = state.ocupado; $("#btnSync").classList.toggle("girando", state.ocupado);
     $("#conectar").hidden = !state.cargado || !!c?.conectado;
-    $("#status").textContent = c?.ultimaSync ? `Sincronizado ${new Date(c.ultimaSync).toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "";
+    const sync = c?.ultimaSync ? `Sincronizado ${new Date(c.ultimaSync).toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "";
+    $("#status").textContent = state.ocupado ? "Sincronizando…" : sync; $("#statusMenu").textContent = sync || "Sin sincronizar";
     $("#btnConectar").disabled = !!c?.faltaConfig?.length;
     if (c?.sinFuncion) banner("La función fitbit-sync no responde. Revisa que esté desplegada (ver README).", true);
     else if (c?.faltaConfig?.length && !c.conectado) banner(`Falta dar de alta el cliente de Google en Supabase (${c.faltaConfig.join(", ")}). Ver README.`, true);
@@ -97,27 +98,30 @@
     v.innerHTML = state.tab === "tendencias" ? vistaTendencias() : state.tab === "tabla" ? vistaTabla() : vistaDia();
   }
 
+  const NOMBRES = { recuperacion: "Recuperación", sueno: "Sueño", actividad: "Actividad" };
+  const PALABRA = { optima: "Óptimo", buena: "Bueno", atencion: "Atención" };
+
   function anillo(total) {
-    const r = 36, C = 2 * Math.PI * r;
+    const r = 50, C = 2 * Math.PI * r;
     const off = total == null ? C : C * (1 - total / 100);
-    return `<svg class="ring" viewBox="0 0 84 84" role="img" aria-label="${total == null ? "Sin puntuación" : `${total} de 100`}">
-      <circle class="bg" cx="42" cy="42" r="${r}" fill="none" stroke-width="7"/>
-      <circle class="fg" cx="42" cy="42" r="${r}" fill="none" stroke-width="7" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 42 42)"/>
-      <text x="42" y="50" text-anchor="middle">${total ?? "—"}</text></svg>`;
+    return `<svg class="ring" viewBox="0 0 120 120" role="img" aria-label="${total == null ? "Sin puntuación" : `${total} de 100`}">
+      <circle class="bg" cx="60" cy="60" r="${r}" fill="none" stroke-width="9"/>
+      <circle class="fg" cx="60" cy="60" r="${r}" fill="none" stroke="url(#gradAnillo)" stroke-width="9" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 60 60)"/>
+      <text x="60" y="71" text-anchor="middle">${total ?? "—"}</text></svg>`;
   }
 
-  function tarjeta(titulo, p, nota) {
-    const b = P.banda(p?.total);
-    return `<section class="box">
-      <div class="score-head">${anillo(p?.total ?? null)}
-        <div style="display:grid;gap:4px"><h2>${titulo}</h2>${b ? `<span class="band ${b.key}">${b.label}</span>` : `<span class="small muted">${nota || "Sin datos suficientes"}</span>`}</div></div>
-      <div class="contribs">${(p?.contribuyentes || []).map((c) => `<div class="contrib ${c.pts == null ? "na" : ""}">
-        <span>${esc(c.label)}</span><span class="v">${esc(c.valor)}</span>
-        <span class="bar" role="img" aria-label="${c.pts == null ? "sin dato" : `${c.pts} de 100`}"><i style="width:${c.pts ?? 0}%"></i></span></div>`).join("")}</div>
-    </section>`;
+  // Una frase que explica la puntuación: el factor más bajo si preocupa, o el que más ayuda
+  function insight(key, p) {
+    if (!p || p.total == null) return key === "recuperacion" && p?.calibrando ? "Calibrando: con 7 días de datos empiezo a comparar contra tu línea base." : "Todavía no hay datos suficientes para este día.";
+    const ok = p.contribuyentes.filter((c) => c.pts != null).sort((a, b) => a.pts - b.pts);
+    const peor = ok[0], mejor = ok[ok.length - 1];
+    if (peor && peor.pts < 70) return `Presta atención a ${peor.label.toLowerCase()} (${peor.valor}); es lo que más baja tu ${NOMBRES[key].toLowerCase()}.`;
+    return mejor ? `Vas bien. Lo que más te ayuda hoy: ${mejor.label.toLowerCase()} (${mejor.valor}).` : "";
   }
 
-  function tile(label, valor, delta) { return `<div class="tile"><span class="small muted">${label}</span><b>${valor}</b>${delta ? `<span class="delta">${delta}</span>` : ""}</div>`; }
+  function tile(label, valor, delta) { return `<div class="tile"><span class="lbl">${label}</span><span class="val">${valor}</span>${delta ? `<span class="delta">${delta}</span>` : ""}</div>`; }
+  const conUnidad = (v, u) => (v == null || v === "—" ? "—" : `${v}<small>${u}</small>`);
+  const horasMin = (min) => (min == null ? "—" : `${Math.floor(min / 60)}<small>h</small> ${String(Math.round(min % 60)).padStart(2, "0")}<small>min</small>`);
 
   function vistaDia() {
     const d = state.dias.find((x) => x.fecha === state.fecha) || { fecha: state.fecha };
@@ -126,30 +130,47 @@
     const previos = state.dias.slice(Math.max(0, i - 30), i);
     const base = (k) => media(previos.map((x) => num(x[k])).filter((x) => x != null));
     const vsBase = (k, dec, u) => { const b = base(k), v = num(d[k]); return b == null || v == null ? "" : `${signo(v - b, dec)} ${u} vs. tu promedio`; };
+    const sel = state.puntaje || "recuperacion";
+    const ps = p?.[sel];
+    const esHoy = state.fecha === hoyISO();
+    const [dia, ...resto] = fechaLarga(state.fecha).split(", ");
     const s = d.sueno;
-    return `<div style="display:grid;gap:14px">
+    return `<div class="dia">
       <div class="daynav">
-        <button class="btn" data-dia="-1" ${i <= 0 ? "disabled" : ""} aria-label="Día anterior">‹</button>
-        <h2>${esc(fechaLarga(state.fecha))}</h2>
-        <button class="btn" data-dia="1" ${i < 0 || i >= state.dias.length - 1 ? "disabled" : ""} aria-label="Día siguiente">›</button>
-        <button class="btn" data-dia="ultimo" ${i === state.dias.length - 1 ? "hidden" : ""}>Hoy</button>
+        <button class="nav" data-dia="-1" ${i <= 0 ? "disabled" : ""} aria-label="Día anterior">‹</button>
+        <div class="fecha"><span class="eyebrow">${esHoy ? "Hoy" : esc(dia)}</span><h1>${esc(resto.join(", ") || dia)}</h1></div>
+        ${i < state.dias.length - 1 ? `<button class="btn sm" data-dia="ultimo">Hoy</button>` : ""}
+        <button class="nav" data-dia="1" ${i < 0 || i >= state.dias.length - 1 ? "disabled" : ""} aria-label="Día siguiente">›</button>
       </div>
-      <div class="scores">
-        ${tarjeta("Recuperación", p?.recuperacion, p?.recuperacion?.calibrando ? "Calibrando: faltan días de línea base" : "")}
-        ${tarjeta("Sueño", p?.sueno, "Sin noche registrada")}
-        ${tarjeta("Actividad", p?.actividad)}
-      </div>
+      <div class="anillos">${Object.keys(NOMBRES).map((k) => {
+        const sc = p?.[k], b = P.banda(sc?.total);
+        return `<button class="anillo-btn" data-puntaje="${k}" aria-pressed="${k === sel}">${anillo(sc?.total ?? null)}
+          <span class="nombre">${NOMBRES[k]}</span><span class="estado est ${b?.key || "nd"}">${b ? PALABRA[b.key] : k === "recuperacion" && sc?.calibrando ? "Calibrando" : "Sin datos"}</span></button>`;
+      }).join("")}</div>
+      <section class="box detalle">
+        <h2>${NOMBRES[sel]}</h2>
+        <p class="insight">${esc(insight(sel, ps))}</p>
+        <div class="contribs">${(ps?.contribuyentes || []).map((c) => {
+          const b = P.banda(c.pts);
+          return `<div class="contrib ${c.pts == null ? "na" : ""}"><span>${esc(c.label)}</span>
+            <span class="der"><span class="v">${esc(c.valor)}</span>${b ? `<span class="est ${b.key}">${PALABRA[b.key]}</span>` : ""}</span>
+            <span class="bar" role="img" aria-label="${c.pts == null ? "sin dato" : `${c.pts} de 100`}"><i class="${b?.key || ""}" style="width:${c.pts ?? 0}%"></i></span></div>`;
+        }).join("")}</div>
+      </section>
+      <h2 class="seccion">Métricas</h2>
       <div class="tiles">
-        ${tile("Sueño total", s?.dormido != null ? P.hm(s.dormido) : "—", s?.enCama ? `${P.hm(s.enCama)} en cama` : "")}
-        ${tile("FC en reposo", d.fc_reposo != null ? `${fmtNum(d.fc_reposo)} lpm` : "—", vsBase("fc_reposo", 0, "lpm"))}
-        ${tile("VFC", d.vfc != null ? `${fmtNum(d.vfc)} ms` : "—", vsBase("vfc", 0, "ms"))}
-        ${tile("SpO2", d.spo2 != null ? `${fmtNum(d.spo2, 1)}%` : "—", "")}
-        ${tile("Respiración", d.resp != null ? `${fmtNum(d.resp, 1)} rpm` : "—", vsBase("resp", 1, "rpm"))}
-        ${tile("Temperatura", tempDelta(d) != null ? `${signo(tempDelta(d))} °C` : "—", tempDelta(d) != null ? "vs. tu línea base" : "")}
-        ${tile("Pasos", fmtNum(d.pasos), "")}
+        ${tile("FC en reposo", conUnidad(fmtNum(d.fc_reposo), "lpm"), vsBase("fc_reposo", 0, "lpm"))}
+        ${tile("VFC", conUnidad(fmtNum(d.vfc), "ms"), vsBase("vfc", 0, "ms"))}
+        ${tile("SpO2", conUnidad(fmtNum(d.spo2, 1), "%"), vsBase("spo2", 1, "pts"))}
+        ${tile("Respiración", conUnidad(fmtNum(d.resp, 1), "rpm"), vsBase("resp", 1, "rpm"))}
+        ${tile("Temperatura", conUnidad(tempDelta(d) == null ? null : signo(tempDelta(d)), "°C"), tempDelta(d) != null ? "vs. tu línea base" : "")}
+        ${tile("Sueño total", horasMin(s?.dormido ?? null), s?.enCama ? `${P.hm(s.enCama)} en cama` : "")}
+        ${tile("Pasos", fmtNum(d.pasos), vsBase("pasos", 0, ""))}
         ${tile("Minutos en zona", fmtNum(d.azm), "")}
       </div>
+      ${s?.hipnograma?.length || d.spo2_noche || d.spo2 != null ? `<h2 class="seccion">Noche</h2>` : ""}
       ${s?.hipnograma?.length ? hipnograma(s) : ""}
+      ${oxigenoNoche(d)}
     </div>`;
   }
 
@@ -159,20 +180,20 @@
   function hipnograma(s) {
     const conFases = s.hipnograma.some(([k]) => ["DEEP", "REM", "LIGHT"].includes(k));
     const ETAPAS = conFases ? ETAPAS_FASES : ETAPAS_CLASICO;
-    const W = 720, rowH = 30, gutter = 72, top = 6, H = top + rowH * ETAPAS.length + 24;
+    const W = 640, rowH = 32, gutter = 78, top = 6, H = top + rowH * ETAPAS.length + 26;
     const t0 = Date.parse(s.inicio), t1 = Date.parse(s.fin), span = Math.max(1, t1 - t0);
     const x = (ms) => gutter + ((ms - t0) / span) * (W - gutter - 24);
     const fila = Object.fromEntries(ETAPAS.map(([k], i) => [k, i]));
     const segs = s.hipnograma.filter(([k]) => k in fila).map(([k, a, b]) => {
       const x0 = x(Date.parse(a)), x1 = x(Date.parse(b)), et = ETAPAS[fila[k]];
-      return `<rect x="${x0.toFixed(1)}" y="${top + fila[k] * rowH + 4}" width="${Math.max(1, x1 - x0 - 1).toFixed(1)}" height="${rowH - 8}" rx="2" fill="var(${et[2]})"><title>${et[1]} · ${horaLocal(Date.parse(a), s.offset)}–${horaLocal(Date.parse(b), s.offset)}</title></rect>`;
+      return `<rect x="${x0.toFixed(1)}" y="${top + fila[k] * rowH + 5}" width="${Math.max(1, x1 - x0 - 1).toFixed(1)}" height="${rowH - 10}" rx="4" fill="var(${et[2]})"><title>${et[1]} · ${horaLocal(Date.parse(a), s.offset)}–${horaLocal(Date.parse(b), s.offset)}</title></rect>`;
     }).join("");
     const horas = [];
     const primera = Math.ceil((t0 + s.offset * 1000) / 3600000) * 3600000 - s.offset * 1000;
     for (let t = primera; t < t1; t += 3600000) horas.push(t);
     const paso = horas.length > 8 ? 2 : 1;
-    const ejes = horas.filter((_, i) => i % paso === 0).map((t) => `<line class="grid" x1="${x(t)}" x2="${x(t)}" y1="${top}" y2="${top + rowH * ETAPAS.length}"/><text class="lbl" x="${x(t)}" y="${H - 6}" text-anchor="middle">${horaLocal(t, s.offset)}</text>`).join("");
-    const filas = ETAPAS.map(([, lbl], i) => `<text class="lbl" x="0" y="${top + i * rowH + rowH / 2 + 4}">${lbl}</text>`).join("");
+    const ejes = horas.filter((_, i) => i % paso === 0).map((t) => `<line class="grid-svg" x1="${x(t)}" x2="${x(t)}" y1="${top}" y2="${top + rowH * ETAPAS.length}"/><text class="lbl-svg" x="${x(t)}" y="${H - 6}" text-anchor="middle">${horaLocal(t, s.offset)}</text>`).join("");
+    const filas = ETAPAS.map(([, lbl], i) => `<text class="lbl-svg" x="0" y="${top + i * rowH + rowH / 2 + 5}">${lbl}</text>`).join("");
     const et = s.etapas || {};
     return `<section class="box hypno">
       <h3>${conFases ? "Etapas de sueño" : "Sueño"} · ${horaLocal(t0, s.offset)} a ${horaLocal(t1, s.offset)}${s.siesta ? " · siesta" : ""}</h3>
@@ -182,10 +203,30 @@
     </section>`;
   }
 
+  // SpO2 de la noche: resumen y curva minuto a minuto con el umbral de 90%
+  function oxigenoNoche(d) {
+    const o = d.spo2_noche;
+    if (!o) return d.spo2 != null ? `<section class="box oxi"><h3>Oxígeno en la sangre</h3><p class="muted">Promedio de la noche: <b>${fmtNum(d.spo2, 1)}%</b>. El detalle minuto a minuto aparece cuando el Fitbit lo registra durante el sueño.</p></section>` : "";
+    const offset = d.sueno?.offset || 0, t0 = Date.parse(o.inicio);
+    const puntos = o.valores.map((v, k) => ({ fecha: t0 + k * o.paso * 1000, v }));
+    const lo = Math.min(88, Math.floor(o.minimo) - 1);
+    return `<section class="box oxi">
+      <h3>Oxígeno en la sangre</h3>
+      <div class="stats">
+        <div><b>${fmtNum(o.promedio, 1)}%</b><span>Promedio</span></div>
+        <div><b>${fmtNum(o.minimo, 0)}%</b><span>Mínimo</span></div>
+        <div><b>${fmtNum(o.bajo90)} min</b><span>Debajo de 90%</span></div>
+        <div><b>${fmtNum(o.indice, 1)}</b><span>Caídas por hora</span></div>
+      </div>
+      ${grafica("oxi", "SpO2", puntos, { sinCaja: true, W: 640, H: 170, escala: [lo, 100], refs: [90], unidad: "%", fmt: (v) => fmtNum(v, v % 1 ? 1 : 0), fmtX: (ms) => horaLocal(ms, offset), marcar: (v) => v < 90 })}
+      <p class="small muted">Caídas: bajadas de 3 puntos o más respecto a los 10 minutos previos. Lo normal es estar arriba de 95% y con menos de 5 caídas por hora; no es un diagnóstico.</p>
+    </section>`;
+  }
+
   // ---------- Tendencias ----------
   const series = {};
-  function grafica(id, titulo, puntos, { fmt = (v) => fmtNum(v), fmtX = fechaCorta, escala = null, refs = [], banda = false, unidad = "" } = {}) {
-    const W = 360, H = 150, L = 36, R = 8, T = 10, B = 22;
+  function grafica(id, titulo, puntos, { fmt = (v) => fmtNum(v), fmtX = fechaCorta, escala = null, refs = [], banda = false, unidad = "", sinCaja = false, marcar = null, W = 360, H = 150 } = {}) {
+    const L = 36, R = 8, T = 10, B = 22;
     const vals = puntos.map((p) => p.v).filter((v) => v != null);
     if (!vals.length) return `<section class="box chart"><h3>${titulo}</h3><div class="empty">Sin datos en este periodo</div></section>`;
     let [lo, hi] = escala || [Math.min(...vals), Math.max(...vals)];
@@ -200,21 +241,24 @@
     const ticks = escala ? [lo, (lo + hi) / 2, hi] : [lo + (hi - lo) * 0.1, (lo + hi) / 2, hi - (hi - lo) * 0.1].map(redondo);
     const ultimo = [...puntos].reverse().find((p) => p.v != null);
     series[id] = { puntos, x, y, fmt, fmtX, W, H, unidad };
-    return `<section class="box chart" data-chart="${id}">
-      <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><h3>${titulo}</h3>
-        <span class="small muted">promedio <span class="mono">${fmt(m)}${unidad}</span></span></div>
-      <div class="big">${fmt(ultimo.v)}${unidad} <span class="small muted">${fmtX(ultimo.fecha)}</span></div>
+    // Marca puntos fuera de rango (p. ej. SpO2 < 90%) para que no se pierdan en la línea
+    const marcas = marcar ? puntos.map((p, i) => (p.v != null && marcar(p.v) ? `<circle class="bajo" cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="2.5"/>` : "")).join("") : "";
+    const cabeza = sinCaja ? "" : `<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><h3>${titulo}</h3>
+        <span class="small muted">promedio ${fmt(m)}${unidad}</span></div>
+      <div class="big">${fmt(ultimo.v)}${unidad} <span class="small muted">${fmtX(ultimo.fecha)}</span></div>`;
+    return `<${sinCaja ? "div" : "section"} class="${sinCaja ? "" : "box "}chart" data-chart="${id}">
+      ${cabeza}
       <div style="position:relative">
       <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(titulo)}: ${puntos.length} días, promedio ${fmt(m)}${unidad}">
         ${ticks.map((t) => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="axis" x="${L - 5}" y="${y(t) + 3}" text-anchor="end">${fmt(t)}</text>`).join("")}
         ${banda && sd ? `<rect class="baseband" x="${L}" width="${W - L - R}" y="${y(Math.min(hi, m + sd))}" height="${Math.max(0, y(Math.max(lo, m - sd)) - y(Math.min(hi, m + sd)))}"><title>Tu rango habitual (promedio ± 1 desviación)</title></rect>` : ""}
         ${refs.filter((r) => r > lo && r < hi).map((r) => `<line class="ref" x1="${L}" x2="${W - R}" y1="${y(r)}" y2="${y(r)}"/>`).join("")}
-        <path class="line" d="${d}"/>
+        <path class="line" d="${d}"/>${marcas}
         ${puntos.length > 1 ? [0, Math.floor((puntos.length - 1) / 2), puntos.length - 1].map((i) => `<text class="axis" x="${x(i)}" y="${H - 6}" text-anchor="${i === 0 ? "start" : i === puntos.length - 1 ? "end" : "middle"}">${fmtX(puntos[i].fecha)}</text>`).join("") : ""}
         <line class="cross" y1="${T}" y2="${H - B}" visibility="hidden"/><circle class="dot" r="4.5" visibility="hidden"/>
         <rect x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent" data-hover="${id}"/>
       </svg><div class="tip" hidden></div></div>
-    </section>`;
+    </${sinCaja ? "div" : "section"}>`;
   }
 
   function vistaTendencias() {
@@ -226,7 +270,7 @@
     return `<div style="display:grid;gap:12px">
       <div class="toolbar"><label class="small muted" for="selRango">Periodo</label>
         <select id="selRango" style="width:auto">${[14, 30, 90].map((n) => `<option value="${n}" ${state.rango === n ? "selected" : ""}>Últimos ${n} días</option>`).join("")}</select>
-        <span class="small muted">Líneas punteadas: 70 (buena) y 85 (óptima). Franja gris: tu rango habitual.</span></div>
+        <span class="small muted">Líneas punteadas: 70 (bueno) y 85 (óptimo). Franja azul: tu rango habitual.</span></div>
       <div class="charts">
         ${grafica("rec", "Recuperación", serie((d, p) => p?.recuperacion.total ?? null), score)}
         ${grafica("sue", "Sueño", serie((d, p) => p?.sueno.total ?? null), score)}
@@ -235,6 +279,8 @@
         ${grafica("fc", "FC en reposo", serie((d) => num(d?.fc_reposo)), { banda: true, unidad: " lpm" })}
         ${grafica("hrs", "Sueño total", serie((d) => (d?.sueno?.dormido != null ? d.sueno.dormido / 60 : null)), { banda: true, fmt: (v) => fmtNum(v, 1), unidad: " h" })}
         ${grafica("tmp", "Temperatura vs. base", serie((d) => tempDelta(d)), { fmt: (v) => signo(v), unidad: " °C", refs: [0] })}
+        ${grafica("spo", "SpO2 nocturna", serie((d) => num(d?.spo2)), { escala: [88, 100], refs: [90], banda: true, unidad: "%", fmt: (v) => fmtNum(v, v % 1 ? 1 : 0) })}
+        ${grafica("cai", "Caídas de oxígeno por hora", serie((d) => num(d?.spo2_noche?.indice)), { refs: [5], unidad: "/h", fmt: (v) => fmtNum(v, 1) })}
         ${grafica("pas", "Pasos", serie((d) => num(d?.pasos)), { refs: [8000] })}
       </div></div>`;
   }
@@ -244,9 +290,9 @@
       const p = state.puntos.get(d.fecha) || {};
       return `<tr><td>${esc(fechaCorta(d.fecha))}</td><td class="num">${p.recuperacion?.total ?? "—"}</td><td class="num">${p.sueno?.total ?? "—"}</td><td class="num">${p.actividad?.total ?? "—"}</td>
         <td class="num">${d.sueno?.dormido != null ? P.hm(d.sueno.dormido) : "—"}</td><td class="num">${fmtNum(d.fc_reposo)}</td><td class="num">${fmtNum(d.vfc)}</td>
-        <td class="num">${fmtNum(d.spo2, 1)}</td><td class="num">${fmtNum(d.resp, 1)}</td><td class="num">${signo(tempDelta(d))}</td><td class="num">${fmtNum(d.pasos)}</td><td class="num">${fmtNum(d.azm)}</td></tr>`;
+        <td class="num">${fmtNum(d.spo2, 1)}</td><td class="num">${fmtNum(d.spo2_noche?.minimo)}</td><td class="num">${fmtNum(d.resp, 1)}</td><td class="num">${signo(tempDelta(d))}</td><td class="num">${fmtNum(d.pasos)}</td><td class="num">${fmtNum(d.azm)}</td></tr>`;
     }).join("");
-    return `<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th class="num">Recup.</th><th class="num">Sueño</th><th class="num">Activ.</th><th class="num">Dormido</th><th class="num">FC rep.</th><th class="num">VFC ms</th><th class="num">SpO2 %</th><th class="num">Resp.</th><th class="num">Temp Δ</th><th class="num">Pasos</th><th class="num">Min. zona</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+    return `<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th class="num">Recup.</th><th class="num">Sueño</th><th class="num">Activ.</th><th class="num">Dormido</th><th class="num">FC rep.</th><th class="num">VFC ms</th><th class="num">SpO2 %</th><th class="num">SpO2 mín.</th><th class="num">Resp.</th><th class="num">Temp Δ</th><th class="num">Pasos</th><th class="num">Min. zona</th></tr></thead><tbody>${filas}</tbody></table></div>`;
   }
 
   // ---------- Medir (sesión con el Fitbit Air) ----------
@@ -285,17 +331,29 @@
       <td>${esc(new Date(m.inicio || m.creado).toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}</td>
       <td class="num">${m.duracion ? `${Math.round(m.duracion / 60)} min` : "—"}</td>
       <td class="num">${fmtNum(m.fc)}</td><td class="num">${m.fc_min != null ? `${fmtNum(m.fc_min)}–${fmtNum(m.fc_max)}` : "—"}</td>
-      <td class="num">${fmtNum(m.vfc)}</td><td class="num">${fmtNum(m.fr, 1)}</td>
+      <td class="num">${fmtNum(m.vfc)}</td><td class="num">${fmtNum(m.fr, 1)}</td><td>${m.fuente === "bluetooth" ? "En vivo" : "Momento"}</td>
       <td><button class="btn sm" data-borrar-med="${m.id}" aria-label="Borrar medición">Borrar</button></td></tr>`).join("");
     if (!state.conexion?.conectado) return `<div class="empty">Conecta tu cuenta de Google Health para medir con tu Fitbit Air.</div>`;
     return `<div class="medir">
       <section class="box momento">
-        <div class="eyebrow">Momento</div>
-        <h2>Mide tu pulso en reposo</h2>
-        <p>Con tu Fitbit Air puesto, quédate quieto y respira con la guía. Al terminar, la app trae del Fitbit tu frecuencia cardiaca de esos minutos.</p>
-        ${pendiente ? `<p><b>Tienes una sesión de las ${horaCorta(pendiente.inicio)} esperando datos del Fitbit.</b></p><div><button class="btn primary" id="btnVerSesion">Ver resultado</button></div>`
-          : `<div class="chips" role="radiogroup" aria-label="Duración">${DURACIONES.map((d) => `<button class="chip" role="radio" aria-checked="${d === dur}" data-dur="${d}">${d} min</button>`).join("")}</div>
-             <div><button class="btn primary" id="btnMedir">Empezar</button></div>`}
+        <div class="eyebrow">Medir</div>
+        <h2>Tu pulso, con el Fitbit Air</h2>
+        <div class="opciones">
+          <div class="opcion">
+            <h3>En vivo <span class="etiqueta">Bluetooth</span></h3>
+            <p class="small">Pulso latido a latido directo del Fitbit, con VFC y frecuencia respiratoria estimada.</p>
+            <ol class="pasos small"><li>En la app Google Health: Conexiones → Fitbit Air → <b>Compartir frecuencia cardiaca</b>.</li><li>Presiona Conectar y elige tu Fitbit Air.</li></ol>
+            <div><button class="btn primary" id="btnVivo" ${hayBluetooth() ? "" : "disabled"}>Conectar en vivo</button></div>
+            ${hayBluetooth() ? "" : `<p class="small">Este navegador no tiene Bluetooth web. Abre la página en Chrome (Android o computadora); en iPhone, con la app Bluefy.</p>`}
+          </div>
+          <div class="opcion">
+            <h3>Momento <span class="etiqueta">Guiado</span></h3>
+            <p class="small">Quédate quieto y respira con la guía. Al terminar, cuando la app Google Health sincroniza, se trae del Fitbit tu pulso de esos minutos.</p>
+            ${pendiente ? `<p class="small"><b>Tienes una sesión de las ${horaCorta(pendiente.inicio)} esperando datos del Fitbit.</b></p><div><button class="btn primary" id="btnVerSesion">Ver resultado</button></div>`
+              : `<div class="chips" role="radiogroup" aria-label="Duración">${DURACIONES.map((d) => `<button class="chip" role="radio" aria-checked="${d === dur}" data-dur="${d}">${d} min</button>`).join("")}</div>
+                 <div><button class="btn" id="btnMedir">Empezar</button></div>`}
+          </div>
+        </div>
       </section>
       <section class="box">
         <div class="toolbar" style="justify-content:space-between"><h2>Pulso del Fitbit Air</h2><button class="btn" id="btnFcReciente">Actualizar</button></div>
@@ -304,7 +362,7 @@
       </section>
       <section class="box">
         <h2>Tus sesiones</h2>
-        ${filas ? `<div class="tbl-wrap"><table style="min-width:600px"><thead><tr><th>Fecha</th><th class="num">Duración</th><th class="num">FC prom.</th><th class="num">Mín–máx</th><th class="num">VFC ms</th><th class="num">FR noche</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>` : `<div class="empty">Aún no hay sesiones.</div>`}
+        ${filas ? `<div class="tbl-wrap"><table style="min-width:600px"><thead><tr><th>Fecha</th><th class="num">Duración</th><th class="num">FC prom.</th><th class="num">Mín–máx</th><th class="num">VFC ms</th><th class="num">FR rpm</th><th>Modo</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>` : `<div class="empty">Aún no hay sesiones.</div>`}
       </section>
     </div>`;
   }
@@ -314,7 +372,8 @@
 
   function abrirSesion(modo) {
     $("#sesion").hidden = false; document.body.style.overflow = "hidden";
-    for (const id of ["sesCorriendo", "sesEsperando", "sesResult"]) $("#" + id).hidden = id !== modo;
+    for (const id of ["sesCorriendo", "sesEsperando", "sesVivo", "sesResult"]) $("#" + id).hidden = id !== modo;
+    if (modo !== "sesResult") $("#sesTitulo").textContent = modo === "sesVivo" ? "En vivo" : "Momento";
   }
 
   async function iniciarSesion() {
@@ -326,6 +385,7 @@
   }
 
   async function correr(s) {
+    ses.resultado = null;
     abrirSesion("sesCorriendo");
     try { ses.wake = await navigator.wakeLock?.request("screen"); } catch (e) {}
     clearInterval(ses.timer);
@@ -348,6 +408,7 @@
 
   // Espera a que el Fitbit sincronice la ventana de la sesión y consulta cada 20 s (hasta 15 min)
   function esperar(s) {
+    ses.resultado = null;
     abrirSesion("sesEsperando");
     $("#sesEspera").textContent = "Abre la app Google Health en tu teléfono para que tu Fitbit Air sincronice, y regresa aquí.";
     ses.esperandoDesde = Date.now();
@@ -374,7 +435,8 @@
   function mostrarResultado(s, r) {
     ses.resultado = { s, r };
     abrirSesion("sesResult");
-    const fr = frNoche();
+    const vivoBt = s.fuente === "bluetooth";
+    const fr = vivoBt ? (s.fr != null ? { fr: s.fr } : null) : frNoche();
     const W = 320, H = 90, xs = r.serie, lo = Math.min(...xs.map((p) => p.lpm)) - 3, hi = Math.max(...xs.map((p) => p.lpm)) + 3;
     const pts = xs.map((p, i) => `${(xs.length < 2 ? W / 2 : (i / (xs.length - 1)) * W).toFixed(1)},${(H - ((p.lpm - lo) / (hi - lo || 1)) * H).toFixed(1)}`).join(" ");
     $("#sesResult").innerHTML = `
@@ -384,18 +446,21 @@
       <div class="ses-stats">
         <div><b>${r.fcMin}–${r.fcMax}</b><span>lpm</span><small>Mínima y máxima</small></div>
         <div><b>${r.vfc ?? "—"}</b><span>ms</span><small>VFC</small></div>
-        <div><b>${fr ? fmtNum(fr.fr, 1) : "—"}</b><span>rpm</span><small>FR ${fr ? `(noche del ${fechaCorta(fr.fecha)})` : "nocturna"}</small></div>
+        <div><b>${fr ? fmtNum(fr.fr, vivoBt ? 0 : 1) : "—"}</b><span>rpm</span><small>${vivoBt ? "FR estimada" : `FR ${fr ? `(noche del ${fechaCorta(fr.fecha)})` : "nocturna"}`}</small></div>
       </div>
-      <p class="ses-nota">${r.muestras} muestras del Fitbit Air. ${r.vfc == null ? "El Fitbit no registró VFC en esta ventana; la mide sobre todo mientras duermes. " : ""}La frecuencia respiratoria el Fitbit Air solo la calcula durante el sueño.</p>
+      <p class="ses-nota">${vivoBt
+        ? `${r.muestras} lecturas en vivo del Fitbit Air. ${s.conRr ? "La FR se estima por cómo cambia tu ritmo al respirar; necesita al menos 40 segundos quieto." : "El Fitbit no mandó intervalos entre latidos, así que no hay VFC ni FR."}`
+        : `${r.muestras} muestras del Fitbit Air. ${r.vfc == null ? "El Fitbit no registró VFC en esta ventana; la mide sobre todo mientras duermes. " : ""}La frecuencia respiratoria el Fitbit Air solo la calcula durante el sueño.`}</p>
       <div class="ses-botones"><button class="ses-btn primario" id="sesGuardar">Guardar</button><button class="ses-btn" id="sesDescartar">Descartar</button></div>`;
   }
 
   async function guardarMedicion() {
     if (!ses.resultado) return;
-    const { s, r } = ses.resultado, fr = frNoche();
-    const { error } = await sb.from("salud_mediciones").insert({ inicio: s.inicio, fin: s.fin, duracion: s.duracion, fc: r.fc, fc_min: r.fcMin, fc_max: r.fcMax, vfc: r.vfc, fr: fr?.fr ?? null, muestras: r.muestras, fuente: "fitbit" });
+    const { s, r } = ses.resultado, vivoBt = s.fuente === "bluetooth";
+    const fr = vivoBt ? s.fr : frNoche()?.fr;
+    const { error } = await sb.from("salud_mediciones").insert({ inicio: s.inicio, fin: s.fin, duracion: s.duracion, fc: r.fc, fc_min: r.fcMin, fc_max: r.fcMax, vfc: r.vfc, fr: fr ?? null, muestras: r.muestras, fuente: vivoBt ? "bluetooth" : "fitbit" });
     if (error) { toast("No se pudo guardar: " + error.message); return; }
-    guardarSesionLocal(null);
+    if (!vivoBt) guardarSesionLocal(null);
     cerrarSesion();
     await cargarMediciones();
     state.tab = "medir"; render();
@@ -411,8 +476,10 @@
 
   function cerrarSesion(descartar = false) {
     clearInterval(ses.timer); clearInterval(ses.sondeo);
+    vivo.terminado = true; detenerVivo();
     try { ses.wake?.release(); } catch (e) {}
-    if (descartar) guardarSesionLocal(null);
+    // Descartar una medición en vivo no toca la sesión de Momento que pudiera estar esperando datos
+    if (descartar && ses.resultado?.s?.fuente !== "bluetooth" && $("#sesVivo").hidden) guardarSesionLocal(null);
     $("#sesion").hidden = true; document.body.style.overflow = "";
     if (state.tab === "medir") render();
   }
@@ -427,9 +494,103 @@
   }
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && iniciado) retomarSesion(); });
 
+  // ---------- En vivo por Bluetooth ----------
+  // Con "Compartir frecuencia cardiaca" activo, el Fitbit Air transmite con el perfil estándar de ritmo cardiaco
+  // (el mismo que usan las caminadoras y apps de ciclismo). Chrome lo lee con Web Bluetooth; Safari en iPhone no.
+  const vivo = { device: null, char: null, inicio: 0, lpms: [], rr: [], timer: 0, terminado: false };
+  const hayBluetooth = () => !!navigator.bluetooth;
+  const estadoVivo = (t) => { $("#vivoEstado").textContent = t; };
+
+  async function iniciarVivo() {
+    if (!hayBluetooth()) { toast("Este navegador no tiene Bluetooth web. Usa Chrome en Android o en computadora."); return; }
+    let device;
+    try { device = await navigator.bluetooth.requestDevice({ filters: [{ services: ["heart_rate"] }] }); }
+    catch (e) { if (e.name !== "NotFoundError") toast("No se pudo abrir Bluetooth: " + e.message); return; }
+    detenerVivo();
+    ses.resultado = null;
+    Object.assign(vivo, { device, char: null, inicio: 0, lpms: [], rr: [], terminado: false });
+    abrirSesion("sesVivo");
+    $("#sesTitulo").textContent = "En vivo";
+    $("#vivoLpm").textContent = "--"; $("#vivoVfc").textContent = "—"; $("#vivoFr").textContent = "—"; $("#vivoTiempo").textContent = "0:00";
+    $("#vivoCurva").innerHTML = ""; $("#vivoLatido").classList.remove("latiendo");
+    estadoVivo(`Conectando con ${device.name || "tu Fitbit Air"}…`);
+    device.addEventListener("gattserverdisconnected", () => { if (!vivo.terminado) estadoVivo("Se perdió la conexión con el Fitbit. Presiona Terminar para ver lo medido o vuelve a conectar."); });
+    try {
+      const server = await device.gatt.connect();
+      const svc = await server.getPrimaryService("heart_rate");
+      vivo.char = await svc.getCharacteristic("heart_rate_measurement");
+      vivo.char.addEventListener("characteristicvaluechanged", alMedir);
+      await vivo.char.startNotifications();
+      estadoVivo("Conectado. Quédate quieto y respira normal; con un minuto ya hay VFC y FR.");
+      try { ses.wake = await navigator.wakeLock?.request("screen"); } catch (e) {}
+      vivo.timer = setInterval(tickVivo, 1000);
+    } catch (e) {
+      estadoVivo(`No se pudo conectar (${e.message}). Revisa que "Compartir frecuencia cardiaca" esté activo en la app Google Health.`);
+    }
+  }
+
+  function alMedir(ev) {
+    const m = Vivo.leerMedicion(ev.target.value);
+    const ahora = Date.now();
+    if (!vivo.inicio) vivo.inicio = ahora;
+    if (m.lpm > 0) {
+      vivo.lpms.push({ t: ahora, lpm: m.lpm });
+      $("#vivoLpm").textContent = m.lpm;
+      $("#vivoLatido").classList.add("latiendo");
+      $("#vivoLatido .ses-corazon").style.animationDuration = `${(60 / m.lpm).toFixed(2)}s`;
+    }
+    vivo.rr.push(...m.rr);
+    dibujarVivo();
+  }
+
+  function tickVivo() {
+    if (!vivo.inicio) return;
+    const seg = (Date.now() - vivo.inicio) / 1000;
+    $("#vivoTiempo").textContent = mmss(seg);
+    const rr = vivo.rr.slice(-240);
+    const vfc = Vivo.rmssd(rr), fr = Vivo.frDesdeRr(rr);
+    if (vfc != null) $("#vivoVfc").textContent = vfc;
+    if (fr != null) $("#vivoFr").textContent = fr;
+    if (seg > 20 && !vivo.rr.length) estadoVivo("Tu Fitbit manda el pulso pero no los intervalos entre latidos, así que solo se mide la FC.");
+  }
+
+  // Últimos 2 minutos de pulso como línea
+  function dibujarVivo() {
+    const xs = vivo.lpms.filter((p) => p.t >= Date.now() - 120000);
+    if (xs.length < 2) return;
+    const W = 320, H = 110, lo = Math.min(...xs.map((p) => p.lpm)) - 4, hi = Math.max(...xs.map((p) => p.lpm)) + 4, t0 = xs[0].t, span = Math.max(1, xs[xs.length - 1].t - t0);
+    const pts = xs.map((p) => `${(((p.t - t0) / span) * W).toFixed(1)},${(H - ((p.lpm - lo) / (hi - lo)) * H).toFixed(1)}`).join(" ");
+    $("#vivoCurva").innerHTML = `<polyline points="${pts}" fill="none" stroke="#b3c6ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+  }
+
+  function detenerVivo() {
+    clearInterval(vivo.timer);
+    try { vivo.char?.stopNotifications(); } catch (e) {}
+    try { if (vivo.device?.gatt?.connected) vivo.device.gatt.disconnect(); } catch (e) {}
+  }
+
+  function terminarVivo() {
+    vivo.terminado = true;
+    detenerVivo();
+    const xs = vivo.lpms;
+    if (xs.length < 10) { estadoVivo("Muy pocos datos para un resultado. Mide al menos 30 segundos."); return; }
+    const lpms = xs.map((p) => p.lpm);
+    const inicio = new Date(xs[0].t).toISOString(), fin = new Date(xs[xs.length - 1].t).toISOString();
+    // Serie en bloques de 5 s para la gráfica del resultado
+    const bloques = new Map();
+    for (const p of xs) { const k = Math.floor((p.t - xs[0].t) / 5000); if (!bloques.has(k)) bloques.set(k, []); bloques.get(k).push(p.lpm); }
+    const r = {
+      fc: Math.round(media(lpms)), fcMin: Math.min(...lpms), fcMax: Math.max(...lpms), vfc: Vivo.rmssd(vivo.rr), muestras: xs.length,
+      serie: [...bloques.entries()].map(([k, v]) => ({ t: new Date(xs[0].t + k * 5000).toISOString(), lpm: Math.round(media(v)) })),
+    };
+    mostrarResultado({ inicio, fin, duracion: Math.round((xs[xs.length - 1].t - xs[0].t) / 1000), fuente: "bluetooth", fr: Vivo.frDesdeRr(vivo.rr), conRr: vivo.rr.length > 0 }, r);
+  }
+
   // ---------- Eventos ----------
   document.addEventListener("click", async (e) => {
     if (e.target.closest("#btnMedir")) { iniciarSesion(); return; }
+    if (e.target.closest("#btnVivo")) { iniciarVivo(); return; }
+    if (e.target.closest("#vivoTerminar")) { terminarVivo(); return; }
     if (e.target.closest("#btnVerSesion")) { retomarSesion(); if ($("#sesion").hidden) esperar(leerSesion()); return; }
     if (e.target.closest("#sesConsultar")) { consultarSesion(); return; }
     if (e.target.closest("#btnFcReciente")) { actualizarFcReciente(); return; }
@@ -441,6 +602,9 @@
     if (e.target.closest("#sesGuardar")) { guardarMedicion(); return; }
     const borrar = e.target.closest("[data-borrar-med]");
     if (borrar) { borrarMedicion(borrar.dataset.borrarMed); return; }
+    document.querySelectorAll("details.menu[open]").forEach((m) => { if (!m.contains(e.target) || e.target.closest(".menu-list button")) m.removeAttribute("open"); });
+    const pz = e.target.closest("[data-puntaje]");
+    if (pz) { state.puntaje = pz.dataset.puntaje; try { localStorage.setItem("salud-puntaje", state.puntaje); } catch (err) {} render(); return; }
     const t = e.target.closest("[data-tab],[data-dia]");
     if (!t) return;
     if (t.dataset.tab) { state.tab = t.dataset.tab; try { localStorage.setItem("salud-tab", state.tab); } catch (err) {} render(); return; }
