@@ -27,7 +27,7 @@ Fitbit Air ─▶ app Google Health ─▶ Google Health API v4 ─▶ Edge Func
 
 1. **Migración**: aplica `supabase/migrations/20261020000000_salud_fitbit.sql`.
 2. **Google Cloud**: habilita la *Google Health API*, crea un cliente OAuth tipo *Web application* y registra como redirect URI la URL de la función: `https://uzyzeaoliwzkmxiaudso.supabase.co/functions/v1/fitbit-sync`. En la pantalla de consentimiento agrega a los usuarios como *test users*. Mientras la app esté en modo *Testing*, Google vence el refresh token cada 7 días; publícala para evitarlo (sin verificación aplica un tope de 100 usuarios).
-3. **Secretos de la función** (Supabase → Edge Functions → Secrets): `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`. Opcionales: `SALUD_APP_URL` (por default regresa al sitio desde donde se pidió conectar), `SALUD_STATE_SECRET` (por default firma con la service role key) y `SALUD_CRON_SECRET`.
+3. **Secretos de la función** (Supabase → Edge Functions → Secrets): `GOOGLE_CLIENT_SECRET`. El client ID del proyecto está en el código (no es secreto); `GOOGLE_CLIENT_ID` solo hace falta para usar otro cliente. Para revisar la configuración sin exponer el secreto: `GET /functions/v1/fitbit-sync?diagnostico`. Opcionales: `SALUD_APP_URL` (por default regresa al sitio desde donde se pidió conectar), `SALUD_STATE_SECRET` (por default firma con la service role key) y `SALUD_CRON_SECRET`.
 4. **Desplegar** sin verificación de JWT (Google regresa a la función sin sesión de Supabase; la función valida al usuario por su cuenta). Ya está desplegada en `iq-taskforge`; para volver a hacerlo:
    ```sh
    supabase functions deploy fitbit-sync --no-verify-jwt

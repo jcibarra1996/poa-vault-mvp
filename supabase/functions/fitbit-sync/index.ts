@@ -5,7 +5,7 @@
 // GET  ?code=…&state=…  → regreso de Google OAuth (la redirect URI registrada es la URL de esta función)
 // POST con header x-cron-secret → sincroniza a todos los conectados (para pg_cron)
 //
-// Secretos: GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET. Opcionales: SALUD_CRON_SECRET, SALUD_STATE_SECRET (por default se usa
+// Secretos: GOOGLE_CLIENT_SECRET (y GOOGLE_CLIENT_ID para usar otro cliente). Opcionales: SALUD_CRON_SECRET, SALUD_STATE_SECRET (por default se usa
 // la service role key para firmar), SALUD_APP_URL (por default se regresa al sitio desde donde se pidió conectar).
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import {
@@ -13,7 +13,8 @@ import {
   leerAzm, leerDiario, leerPasos, leerSueno, sumarDias,
 } from "./google.ts";
 
-const env = (k: string) => Deno.env.get(k) || "";
+// trim: un espacio o salto de línea al pegar el secreto en el panel hace que Google responda invalid_client
+const env = (k: string) => (Deno.env.get(k) || "").trim();
 const SUPABASE_URL = env("SUPABASE_URL");
 const REDIRECT = env("SALUD_REDIRECT_URI") || `${SUPABASE_URL}/functions/v1/fitbit-sync`;
 const APP_URL = env("SALUD_APP_URL");
@@ -29,7 +30,10 @@ const volverA = (destino: string, params: Record<string, string>) => {
   const app = destino || APP_URL;
   return app ? Response.redirect(`${app}${app.includes("?") ? "&" : "?"}${new URLSearchParams(params)}`, 302) : json({ error: "No se sabe a dónde regresar; define SALUD_APP_URL", ...params }, 400);
 };
-const faltaConfig = () => ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"].filter((k) => !env(k));
+// El client ID no es secreto (viaja en la URL de Google); el secreto GOOGLE_CLIENT_ID solo lo reemplaza si tiene forma válida
+const FORMATO_CLIENT_ID = /^\d+-[a-z0-9]+\.apps\.googleusercontent\.com$/;
+const clientId = () => (FORMATO_CLIENT_ID.test(env("GOOGLE_CLIENT_ID")) ? env("GOOGLE_CLIENT_ID") : "576433418475-a0etd07gaq0ncbnbpsn46f2ajaq66m9k.apps.googleusercontent.com");
+const faltaConfig = () => ["GOOGLE_CLIENT_SECRET"].filter((k) => !env(k));
 // Página a la que se regresa después de Google: el sitio que pidió conectar (https, o localhost para pruebas)
 const appDesde = (req: Request) => {
   const o = req.headers.get("Origin") || "";
@@ -81,7 +85,7 @@ async function token(params: Record<string, string>) {
   const r = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_id: env("GOOGLE_CLIENT_ID"), client_secret: env("GOOGLE_CLIENT_SECRET"), ...params }),
+    body: new URLSearchParams({ client_id: clientId(), client_secret: env("GOOGLE_CLIENT_SECRET"), ...params }),
   });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error_description || data.error || `token ${r.status}`);
@@ -205,6 +209,17 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   try {
     if (req.method === "GET" && (url.searchParams.has("code") || url.searchParams.has("error"))) return await regresoDeGoogle(url);
+    // Diagnóstico sin datos sensibles: el client ID es público (va en la URL de Google); del secreto solo se ve su forma
+    if (req.method === "GET" && url.searchParams.has("diagnostico")) {
+      const id = env("GOOGLE_CLIENT_ID"), sec = env("GOOGLE_CLIENT_SECRET");
+      const idOk = FORMATO_CLIENT_ID.test(id);
+      return json({
+        clientId: clientId(),
+        // Si el secreto GOOGLE_CLIENT_ID no tiene forma de client ID (p. ej. se pegó otra cosa), no se muestra completo
+        secretoClientId: id ? (idOk ? id : `${id.slice(0, 4)}… (${id.length} caracteres, se ignora)`) : "", clientIdFormatoOk: idOk,
+        secretoLargo: sec.length, secretoFormatoOk: /^GOCSPX-[\w-]{20,}$/.test(sec), redirectUri: REDIRECT,
+      });
+    }
     if (req.method !== "POST") return json({ error: "Método no permitido" }, 405);
     const body = await req.json().catch(() => ({}));
 
@@ -225,7 +240,7 @@ Deno.serve(async (req) => {
     if (body.accion === "conectar") {
       if (faltaConfig().length) return json({ error: `Falta configurar en Supabase: ${faltaConfig().join(", ")}` }, 503);
       const q = new URLSearchParams({
-        client_id: env("GOOGLE_CLIENT_ID"), redirect_uri: REDIRECT, response_type: "code", scope: SCOPES.join(" "),
+        client_id: clientId(), redirect_uri: REDIRECT, response_type: "code", scope: SCOPES.join(" "),
         access_type: "offline", prompt: "consent", state: await crearState(email, appDesde(req)),
       });
       return json({ url: `${AUTH_URL}?${q}` });
