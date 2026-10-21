@@ -5,7 +5,8 @@
 // GET  ?code=…&state=…  → regreso de Google OAuth (la redirect URI registrada es la URL de esta función)
 // POST con header x-cron-secret → sincroniza a todos los conectados (para pg_cron)
 //
-// Secretos: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SALUD_STATE_SECRET, SALUD_APP_URL, SALUD_CRON_SECRET (opcional)
+// Secretos: GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET. Opcionales: SALUD_CRON_SECRET, SALUD_STATE_SECRET (por default se usa
+// la service role key para firmar), SALUD_APP_URL (por default se regresa al sitio desde donde se pidió conectar).
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import {
   API, AUTH_URL, TOKEN_URL, SCOPES, DIARIOS, Dias, civil, filtroDiario, fusionar,
@@ -24,8 +25,16 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
 };
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...CORS, "Content-Type": "application/json" } });
-const volver = (params: Record<string, string>) =>
-  APP_URL ? Response.redirect(`${APP_URL}${APP_URL.includes("?") ? "&" : "?"}${new URLSearchParams(params)}`, 302) : json({ error: "Falta el secreto SALUD_APP_URL", ...params }, 500);
+const volverA = (destino: string, params: Record<string, string>) => {
+  const app = destino || APP_URL;
+  return app ? Response.redirect(`${app}${app.includes("?") ? "&" : "?"}${new URLSearchParams(params)}`, 302) : json({ error: "No se sabe a dónde regresar; define SALUD_APP_URL", ...params }, 400);
+};
+const faltaConfig = () => ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"].filter((k) => !env(k));
+// Página a la que se regresa después de Google: el sitio que pidió conectar (https, o localhost para pruebas)
+const appDesde = (req: Request) => {
+  const o = req.headers.get("Origin") || "";
+  return /^https:\/\/[\w.-]+$|^http:\/\/localhost(:\d+)?$/.test(o) ? `${o}/fitbit-air/` : APP_URL;
+};
 // deno-lint-ignore no-explicit-any
 type Obj = Record<string, any>;
 
@@ -47,22 +56,23 @@ async function usuario(req: Request) {
 // state firmado (HMAC) para que el regreso de Google solo se acepte si salió de un usuario autorizado
 const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 const deB64url = (s: string) => Uint8Array.from(atob(s.replaceAll("-", "+").replaceAll("_", "/")), (c) => c.charCodeAt(0));
-const llave = () => crypto.subtle.importKey("raw", new TextEncoder().encode(env("SALUD_STATE_SECRET")), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
-async function crearState(email: string) {
-  const carga = b64url(new TextEncoder().encode(JSON.stringify({ e: email, t: Date.now() })));
+const llave = () => crypto.subtle.importKey("raw", new TextEncoder().encode(env("SALUD_STATE_SECRET") || env("SUPABASE_SERVICE_ROLE_KEY")), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+async function crearState(email: string, app: string) {
+  const carga = b64url(new TextEncoder().encode(JSON.stringify({ e: email, a: app, t: Date.now() })));
   const firma = new Uint8Array(await crypto.subtle.sign("HMAC", await llave(), new TextEncoder().encode(carga)));
   return `${carga}.${b64url(firma)}`;
 }
-async function leerState(state: string) {
+async function leerState(state: string): Promise<{ email: string; app: string }> {
+  const nada = { email: "", app: "" };
   const [carga, firma] = state.split(".");
-  if (!carga || !firma) return "";
+  if (!carga || !firma) return nada;
   try {
     const ok = await crypto.subtle.verify("HMAC", await llave(), deB64url(firma), new TextEncoder().encode(carga));
-    if (!ok) return "";
-    const { e, t } = JSON.parse(new TextDecoder().decode(deB64url(carga)));
-    return Date.now() - t < 15 * 60 * 1000 ? String(e) : "";
+    if (!ok) return nada;
+    const { e, a, t } = JSON.parse(new TextDecoder().decode(deB64url(carga)));
+    return Date.now() - t < 15 * 60 * 1000 ? { email: String(e), app: String(a || "") } : nada;
   } catch {
-    return "";
+    return nada;
   }
 }
 
@@ -168,7 +178,8 @@ async function sincronizar(email: string, numDias: number) {
 
 // ---------- Rutas ----------
 async function regresoDeGoogle(url: URL) {
-  const email = await leerState(url.searchParams.get("state") || "");
+  const { email, app } = await leerState(url.searchParams.get("state") || "");
+  const volver = (params: Record<string, string>) => volverA(app, params);
   if (!email || !(await autorizado(email))) return volver({ fitbit: "error", motivo: "La solicitud expiró o no es válida. Intenta de nuevo." });
   if (url.searchParams.get("error")) return volver({ fitbit: "error", motivo: "Se canceló el permiso en Google." });
   try {
@@ -209,12 +220,13 @@ Deno.serve(async (req) => {
 
     if (body.accion === "estado") {
       const { data } = await db.from("salud_conexion").select("conectado, ultima_sync, error, health_user_id").eq("email", email).maybeSingle();
-      return json({ conectado: !!data, ultimaSync: data?.ultima_sync || null, error: data?.error || "" });
+      return json({ conectado: !!data, ultimaSync: data?.ultima_sync || null, error: data?.error || "", faltaConfig: faltaConfig() });
     }
     if (body.accion === "conectar") {
+      if (faltaConfig().length) return json({ error: `Falta configurar en Supabase: ${faltaConfig().join(", ")}` }, 503);
       const q = new URLSearchParams({
         client_id: env("GOOGLE_CLIENT_ID"), redirect_uri: REDIRECT, response_type: "code", scope: SCOPES.join(" "),
-        access_type: "offline", prompt: "consent", state: await crearState(email),
+        access_type: "offline", prompt: "consent", state: await crearState(email, appDesde(req)),
       });
       return json({ url: `${AUTH_URL}?${q}` });
     }

@@ -76,7 +76,9 @@
     $("#btnSync").disabled = state.ocupado; $("#btnSync").textContent = state.ocupado ? "Sincronizando…" : "Sincronizar";
     $("#conectar").hidden = !state.cargado || !!c?.conectado;
     $("#status").textContent = c?.ultimaSync ? `Sincronizado ${new Date(c.ultimaSync).toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "";
+    $("#btnConectar").disabled = !!c?.faltaConfig?.length;
     if (c?.sinFuncion) banner("La función fitbit-sync no responde. Revisa que esté desplegada (ver README).", true);
+    else if (c?.faltaConfig?.length && !c.conectado) banner(`Falta dar de alta el cliente de Google en Supabase (${c.faltaConfig.join(", ")}). Ver README.`, true);
     else if (c?.error) banner(c.error, true);
   }
 
