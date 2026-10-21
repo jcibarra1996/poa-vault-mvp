@@ -126,6 +126,55 @@ export function leerSueno(dias: Dias, puntos: Obj[]) {
   }
 }
 
+// heart-rate (Sample): { sampleTime: { physicalTime }, beatsPerMinute: "72" } → último dato y promedio por minuto
+export function resumirFc(puntos: Obj[]) {
+  const porMin = new Map<number, number[]>();
+  let ultimo: { t: string; lpm: number } | null = null;
+  for (const p of puntos) {
+    const t = p.heartRate?.sampleTime?.physicalTime, lpm = num(p.heartRate?.beatsPerMinute);
+    if (!t || lpm === undefined) continue;
+    const ms = Date.parse(t), m = Math.floor(ms / 60000) * 60000;
+    if (!porMin.has(m)) porMin.set(m, []);
+    porMin.get(m)!.push(lpm);
+    if (!ultimo || ms > Date.parse(ultimo.t)) ultimo = { t, lpm };
+  }
+  const serie = [...porMin.entries()].sort((a, b) => a[0] - b[0])
+    .map(([m, xs]) => ({ t: new Date(m).toISOString(), lpm: Math.round(xs.reduce((s, x) => s + x, 0) / xs.length) }));
+  return { ultimo, serie };
+}
+
+// Sesión de medición: muestras de pulso (y VFC si el reloj la registró) entre inicio y fin.
+// `completa` indica si el Fitbit ya sincronizó hasta el final de la sesión.
+export function resumirSesion(fcs: Obj[], vfcs: Obj[], inicio: string, fin: string) {
+  const a = Date.parse(inicio), b = Date.parse(fin);
+  let ultima = 0;
+  const dentro: { ms: number; lpm: number }[] = [];
+  for (const p of fcs) {
+    const ms = Date.parse(p.heartRate?.sampleTime?.physicalTime), lpm = num(p.heartRate?.beatsPerMinute);
+    if (!ms || lpm === undefined) continue;
+    ultima = Math.max(ultima, ms);
+    if (ms >= a && ms < b) dentro.push({ ms, lpm });
+  }
+  dentro.sort((x, y) => x.ms - y.ms);
+  const lpms = dentro.map((d) => d.lpm);
+  const rmssd = vfcs.map((p) => ({ ms: Date.parse(p.heartRateVariability?.sampleTime?.physicalTime), v: num(p.heartRateVariability?.rootMeanSquareOfSuccessiveDifferencesMilliseconds) }))
+    .filter((x) => x.ms >= a && x.ms < b && x.v !== undefined).map((x) => x.v as number);
+  // Serie en bloques de 15 s para la gráfica
+  const bloques = new Map<number, number[]>();
+  for (const d of dentro) { const k = Math.floor((d.ms - a) / 15000); if (!bloques.has(k)) bloques.set(k, []); bloques.get(k)!.push(d.lpm); }
+  const prom = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
+  return {
+    muestras: dentro.length,
+    fc: lpms.length ? Math.round(prom(lpms)) : null,
+    fcMin: lpms.length ? Math.min(...lpms) : null,
+    fcMax: lpms.length ? Math.max(...lpms) : null,
+    vfc: rmssd.length ? Math.round(prom(rmssd)) : null,
+    serie: [...bloques.entries()].sort((x, y) => x[0] - y[0]).map(([k, xs]) => ({ t: new Date(a + k * 15000).toISOString(), lpm: Math.round(prom(xs)) })),
+    ultimaMuestra: ultima ? new Date(ultima).toISOString() : null,
+    completa: ultima >= b - 30000,
+  };
+}
+
 // Fusiona lo nuevo sobre lo que ya estaba guardado: un tipo que falló no borra el valor anterior
 export function fusionar(viejo: Obj | undefined, nuevo: Dia): Obj {
   const out: Obj = { ...(viejo || {}) };

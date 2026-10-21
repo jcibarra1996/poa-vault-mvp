@@ -1,7 +1,7 @@
 // Edge Function: conecta la cuenta de Google Health (Fitbit Air) de cada usuario autorizado y
 // sincroniza sus métricas diarias a public.salud_dias.
 //
-// POST (con la sesión de Supabase del usuario): { accion: "estado" | "conectar" | "sincronizar" | "desconectar" }
+// POST (con la sesión de Supabase del usuario): { accion: "estado" | "conectar" | "sincronizar" | "fcReciente" | "sesion" | "desconectar" }
 // GET  ?code=…&state=…  → regreso de Google OAuth (la redirect URI registrada es la URL de esta función)
 // POST con header x-cron-secret → sincroniza a todos los conectados (para pg_cron)
 //
@@ -10,7 +10,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import {
   API, AUTH_URL, TOKEN_URL, SCOPES, DIARIOS, Dias, civil, filtroDiario, fusionar,
-  leerAzm, leerDiario, leerPasos, leerSueno, sumarDias,
+  leerAzm, leerDiario, leerPasos, leerSueno, resumirFc, resumirSesion, sumarDias,
 } from "./google.ts";
 
 // trim: un espacio o salto de línea al pegar el secreto en el panel hace que Google responda invalid_client
@@ -246,6 +246,31 @@ Deno.serve(async (req) => {
       return json({ url: `${AUTH_URL}?${q}` });
     }
     if (body.accion === "sincronizar") return json(await sincronizar(email, Number(body.dias) || 7));
+    if (body.accion === "sesion") {
+      const inicio = new Date(String(body.inicio)), fin = new Date(String(body.fin));
+      if (isNaN(+inicio) || isNaN(+fin) || fin <= inicio || +fin - +inicio > 3600_000) return json({ error: "Sesión inválida" }, 400);
+      const { data: con } = await db.from("salud_conexion").select("*").eq("email", email).maybeSingle();
+      if (!con) return json({ error: "No hay cuenta de Google Health conectada." }, 400);
+      const at = await accessToken(con);
+      const desde = inicio.toISOString().replace(/\.\d+Z$/, "Z");
+      // Sin límite superior en el pulso: las muestras posteriores al fin dicen si el reloj ya sincronizó toda la sesión
+      const [fcs, vfcs] = await Promise.all([
+        lista(at, "heart-rate", `heart_rate.sample_time.physical_time >= "${desde}"`, 10000),
+        lista(at, "heart-rate-variability", `heart_rate_variability.sample_time.physical_time >= "${desde}"`, 1000).catch(() => []),
+      ]);
+      return json(resumirSesion(fcs, vfcs, inicio.toISOString(), fin.toISOString()));
+    }
+    if (body.accion === "fcReciente") {
+      const { data: con } = await db.from("salud_conexion").select("*").eq("email", email).maybeSingle();
+      if (!con) return json({ error: "No hay cuenta de Google Health conectada." }, 400);
+      const at = await accessToken(con);
+      // Últimas 3 h; si el reloj no ha sincronizado en ese tiempo, se amplía a 24 h
+      for (const horas of [3, 24]) {
+        const desde = new Date(Date.now() - horas * 3600_000).toISOString().replace(/\.\d+Z$/, "Z");
+        const r = resumirFc(await lista(at, "heart-rate", `heart_rate.sample_time.physical_time >= "${desde}"`, 10000));
+        if (r.ultimo || horas === 24) return json({ ...r, horas });
+      }
+    }
     if (body.accion === "desconectar") {
       const { data: con } = await db.from("salud_conexion").select("refresh_token").eq("email", email).maybeSingle();
       if (con) await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(con.refresh_token)}`, { method: "POST" }).catch(() => {});

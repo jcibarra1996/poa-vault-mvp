@@ -22,6 +22,7 @@ Fitbit Air ─▶ app Google Health ─▶ Google Health API v4 ─▶ Edge Func
 - `supabase/functions/fitbit-sync/`: OAuth con Google y sincronización. Guarda un renglón por día en `salud_dias` (pasos, minutos en zona, FC en reposo, VFC, SpO2, respiración, temperatura y la noche de sueño con su hipnograma). Los tokens de Google viven en `salud_conexion`, que no tiene políticas RLS: solo la función los lee.
 - `fitbit-air/scores.js`: calcula las puntuaciones en el navegador contra la línea base personal de 30 días. No son los algoritmos de Oura ni de Google; los pesos están en el archivo.
 - Cada usuario conecta su propia cuenta y solo ve sus datos (`salud_dias` filtra por el correo de la sesión).
+- **Medir** (estilo "momento"): el usuario se queda quieto 1, 3 o 5 min con una guía de respiración; al terminar, cuando la app Google Health sincroniza, la función trae del Fitbit las muestras de pulso de esa ventana (FC promedio, mínima, máxima y VFC si el reloj la registró) y se guardan en `salud_mediciones`. El Fitbit Air no transmite en vivo por la API y solo calcula la frecuencia respiratoria durante el sueño, así que la FR que se muestra es la de la última noche.
 
 ### Puesta en marcha (una vez)
 

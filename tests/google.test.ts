@@ -57,3 +57,29 @@ test("fusionar no borra lo que no llegó", () => {
   assert.equal(out.vfc, 45);
   assert.deepEqual(out.crudo, { a: 1, b: 2 });
 });
+
+test("FC reciente: último dato y promedio por minuto", async () => {
+  const { resumirFc } = await import("../supabase/functions/fitbit-sync/google.ts");
+  const p = (t: string, b: string) => ({ heartRate: { sampleTime: { physicalTime: t }, beatsPerMinute: b } });
+  const r = resumirFc([p("2026-10-21T18:00:10Z", "70"), p("2026-10-21T18:00:40Z", "74"), p("2026-10-21T18:02:05Z", "80"), { otro: 1 }]);
+  assert.deepEqual(r.ultimo, { t: "2026-10-21T18:02:05Z", lpm: 80 });
+  assert.deepEqual(r.serie, [{ t: "2026-10-21T18:00:00.000Z", lpm: 72 }, { t: "2026-10-21T18:02:00.000Z", lpm: 80 }]);
+});
+
+test("sesión: promedio dentro de la ventana y si ya sincronizó completa", async () => {
+  const { resumirSesion } = await import("../supabase/functions/fitbit-sync/google.ts");
+  const fc = (t: string, b: number) => ({ heartRate: { sampleTime: { physicalTime: t }, beatsPerMinute: String(b) } });
+  const pts = [fc("2026-10-21T19:59:50Z", 90), fc("2026-10-21T20:00:05Z", 70), fc("2026-10-21T20:01:00Z", 66), fc("2026-10-21T20:02:50Z", 62)];
+  const vfc = [{ heartRateVariability: { sampleTime: { physicalTime: "2026-10-21T20:01:30Z" }, rootMeanSquareOfSuccessiveDifferencesMilliseconds: 41.6 } }];
+  const r = resumirSesion(pts, vfc, "2026-10-21T20:00:00Z", "2026-10-21T20:03:00Z");
+  assert.equal(r.muestras, 3);
+  assert.equal(r.fc, 66);
+  assert.equal(r.fcMin, 62);
+  assert.equal(r.fcMax, 70);
+  assert.equal(r.vfc, 42);
+  assert.equal(r.completa, true);
+  assert.equal(r.serie[0].lpm, 70);
+  const parcial = resumirSesion(pts.slice(0, 3), [], "2026-10-21T20:00:00Z", "2026-10-21T20:03:00Z");
+  assert.equal(parcial.completa, false);
+  assert.equal(parcial.vfc, null);
+});

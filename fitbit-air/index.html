@@ -7,7 +7,7 @@
 <title>Salud · Fitbit Air</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 html { color-scheme: light; }
 body { margin: 0; }
@@ -127,7 +127,60 @@ th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--lin
 th { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; background: var(--surface-2); }
 td.num, th.num { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
 tr:last-child td { border-bottom: 0; }
-@media (prefers-reduced-motion: reduce) { .ring .fg { transition: none; } }
+
+/* Medir */
+.medir { display: grid; gap: 12px; }
+.momento { background: linear-gradient(135deg, #16233b, #2a2350); color: #eef2fb; border-color: transparent; }
+.momento .eyebrow { color: #a9b6d3; }
+.momento p, .momento .pasos { color: #c9d3ea; margin: 0; }
+.momento .pasos { padding-left: 18px; display: grid; gap: 2px; }
+.momento .btn.primary { background: #eef2fb; color: #16233b; border-color: #eef2fb; padding: 9px 18px; border-radius: 999px; }
+.fc-ahora { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.fc-ahora b { font-size: 2.4rem; font-weight: 500; }
+.fc-ahora span { color: var(--muted); }
+.btn.sm { padding: 3px 8px; font-size: .8rem; }
+
+/* Sesión de medición: siempre oscura, como una pantalla de enfoque */
+.sesion { position: fixed; inset: 0; z-index: 50; color: #eef2fb; background: radial-gradient(120% 90% at 50% 0%, #1d2c4a 0%, #0d1424 55%, #080c16 100%);
+  display: grid; grid-template-rows: auto 1fr; padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px calc(env(safe-area-inset-bottom, 0px) + 24px); overflow-y: auto; font-family: var(--f-body); }
+.ses-top { display: flex; justify-content: space-between; align-items: center; max-width: 520px; width: 100%; margin: 0 auto; }
+.ses-titulo { font-size: .78rem; letter-spacing: .14em; text-transform: uppercase; color: #a9b6d3; font-weight: 500; }
+.ses-cerrar { background: rgba(255,255,255,.08); border: 0; color: #eef2fb; width: 38px; height: 38px; border-radius: 50%; font-size: 1rem; }
+.ses-cuerpo { max-width: 520px; width: 100%; margin: 0 auto; display: grid; gap: 18px; align-content: center; justify-items: center; text-align: center; }
+.ses-centro { position: relative; width: min(72vw, 300px); aspect-ratio: 1; }
+.ses-anillo { width: 100%; height: 100%; }
+#sesProg { transition: stroke-dashoffset .3s linear; }
+.ses-valor { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 2px; }
+.ses-valor b { font-size: clamp(3.4rem, 16vw, 4.6rem); font-weight: 300; line-height: 1; font-variant-numeric: tabular-nums; }
+.ses-valor small { color: #a9b6d3; letter-spacing: .1em; text-transform: uppercase; font-size: .75rem; }
+/* Guía de respiración: 4 s crece (inhala), 6 s se encoge (exhala) */
+.ses-respira { position: absolute; inset: 22%; border-radius: 50%; background: radial-gradient(circle, rgba(158,197,255,.35), rgba(185,164,255,.08) 70%); animation: respira 10s ease-in-out infinite; }
+@keyframes respira { 0% { transform: scale(.72); } 40% { transform: scale(1.12); } 100% { transform: scale(.72); } }
+.ses-valor b { font-size: clamp(2rem, 9vw, 2.6rem) !important; }
+.ses-valor small { font-family: var(--f-mono); font-size: .95rem !important; letter-spacing: .04em !important; }
+.ses-pulso { width: 120px; height: 120px; border-radius: 50%; border: 2px solid rgba(158,197,255,.5); animation: onda 2.4s ease-out infinite; }
+@keyframes onda { 0% { transform: scale(.7); opacity: 1; } 100% { transform: scale(1.15); opacity: .2; } }
+.ses-h { font-family: var(--f-body); font-weight: 300; font-size: 1.8rem; margin: 0; }
+.ses-grande { display: grid; justify-items: center; }
+.ses-grande b { font-size: clamp(4rem, 20vw, 5.5rem); font-weight: 300; line-height: 1; font-variant-numeric: tabular-nums; }
+.ses-grande span { color: #a9b6d3; text-transform: uppercase; letter-spacing: .1em; font-size: .78rem; }
+.ses-curva { width: 100%; max-width: 360px; height: auto; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); color: #eef2fb; border-radius: 999px; padding: 6px 14px; }
+.chip[aria-checked="true"] { background: #eef2fb; color: #16233b; border-color: #eef2fb; }
+.ses-estado { color: #c9d3ea; max-width: 34ch; margin: 0; min-height: 3em; }
+.ses-result .eyebrow { color: #a9b6d3; }
+.ses-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; width: 100%; }
+.ses-stats div { background: rgba(255,255,255,.06); border-radius: 14px; padding: 16px 8px; display: grid; gap: 2px; justify-items: center; }
+.ses-stats b { font-size: clamp(1.3rem, 6.5vw, 2.2rem); font-weight: 300; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ses-stats span { color: #a9b6d3; font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
+.ses-stats small { color: #c9d3ea; font-size: .75rem; }
+.ses-nota { color: #a9b6d3; font-size: .85rem; margin: 0; max-width: 40ch; }
+.ses-nota.grande { font-size: 1rem; color: #c9d3ea; }
+.ses-botones { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.ses-btn { border: 1px solid rgba(255,255,255,.25); background: transparent; color: #eef2fb; border-radius: 999px; padding: 10px 22px; font-weight: 500; }
+.ses-btn.primario { background: #eef2fb; color: #0d1424; border-color: #eef2fb; }
+@media (prefers-reduced-motion: reduce) { .ring .fg, #sesProg { transition: none; } .ses-respira, .ses-pulso { animation: none; } }
 </style>
 </head>
 <body>
@@ -164,11 +217,36 @@ tr:last-child td { border-bottom: 0; }
   </section>
   <nav class="tabs" role="tablist" id="tabs">
     <button role="tab" data-tab="hoy" aria-selected="true">Día</button>
+    <button role="tab" data-tab="medir" aria-selected="false">Medir</button>
     <button role="tab" data-tab="tendencias" aria-selected="false">Tendencias</button>
     <button role="tab" data-tab="tabla" aria-selected="false">Tabla</button>
   </nav>
   <main id="view"></main>
   <p class="small muted">Las puntuaciones comparan cada métrica contra tu propia línea base de 30 días (se necesitan 7 días para calibrar). Son una guía, no un diagnóstico médico.</p>
+</div>
+<div class="sesion" id="sesion" hidden role="dialog" aria-modal="true" aria-label="Sesión de medición">
+  <div class="ses-top"><span class="ses-titulo">Momento</span><button class="ses-cerrar" id="sesCerrar" aria-label="Cerrar">✕</button></div>
+  <div class="ses-cuerpo" id="sesCorriendo">
+    <div class="ses-centro">
+      <svg class="ses-anillo" viewBox="0 0 240 240" aria-hidden="true">
+        <defs><linearGradient id="sesGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9ec5ff"/><stop offset="1" stop-color="#b9a4ff"/></linearGradient></defs>
+        <circle cx="120" cy="120" r="108" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="6"/>
+        <circle id="sesProg" cx="120" cy="120" r="108" fill="none" stroke="url(#sesGrad)" stroke-width="6" stroke-linecap="round" transform="rotate(-90 120 120)"/>
+      </svg>
+      <div class="ses-respira" aria-hidden="true"></div>
+      <div class="ses-valor"><b id="sesGuia" aria-live="polite">Inhala</b><small id="sesReloj"></small></div>
+    </div>
+    <p class="ses-estado">Mantén tu Fitbit Air bien ajustado, quédate quieto y sigue el círculo.</p>
+    <button class="ses-btn" id="sesCancelar">Cancelar</button>
+  </div>
+  <div class="ses-cuerpo" id="sesEsperando" hidden>
+    <div class="ses-pulso" aria-hidden="true"></div>
+    <h2 class="ses-h">Listo</h2>
+    <p class="ses-estado" id="sesEspera"></p>
+    <p class="ses-nota" id="sesDetalle" aria-live="polite"></p>
+    <div class="ses-botones"><button class="ses-btn primario" id="sesConsultar">Consultar</button><button class="ses-btn" id="sesDescartar">Descartar</button></div>
+  </div>
+  <div class="ses-cuerpo ses-result" id="sesResult" hidden></div>
 </div>
 <div class="toast" id="toast" hidden></div>
 
