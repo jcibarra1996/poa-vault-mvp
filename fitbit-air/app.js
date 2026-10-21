@@ -292,7 +292,26 @@
         <td class="num">${d.sueno?.dormido != null ? P.hm(d.sueno.dormido) : "—"}</td><td class="num">${fmtNum(d.fc_reposo)}</td><td class="num">${fmtNum(d.vfc)}</td>
         <td class="num">${fmtNum(d.spo2, 1)}</td><td class="num">${fmtNum(d.spo2_noche?.minimo)}</td><td class="num">${fmtNum(d.resp, 1)}</td><td class="num">${signo(tempDelta(d))}</td><td class="num">${fmtNum(d.pasos)}</td><td class="num">${fmtNum(d.azm)}</td></tr>`;
     }).join("");
-    return `<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th class="num">Recup.</th><th class="num">Sueño</th><th class="num">Activ.</th><th class="num">Dormido</th><th class="num">FC rep.</th><th class="num">VFC ms</th><th class="num">SpO2 %</th><th class="num">SpO2 mín.</th><th class="num">Resp.</th><th class="num">Temp Δ</th><th class="num">Pasos</th><th class="num">Min. zona</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+    return `<div class="toolbar" style="justify-content:space-between"><span class="small muted">${state.dias.length} días · se sincroniza solo a las 7:40 y 21:40</span><button class="btn" id="btnCsv">Descargar CSV</button></div>
+      <div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th class="num">Recup.</th><th class="num">Sueño</th><th class="num">Activ.</th><th class="num">Dormido</th><th class="num">FC rep.</th><th class="num">VFC ms</th><th class="num">SpO2 %</th><th class="num">SpO2 mín.</th><th class="num">Resp.</th><th class="num">Temp Δ</th><th class="num">Pasos</th><th class="num">Min. zona</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+  }
+
+  // CSV con un renglón por día para analizar en Excel o Sheets (separador coma, punto decimal)
+  function descargarCsv() {
+    const cols = [
+      ["fecha", (d) => d.fecha], ["recuperacion", (d, p) => p.recuperacion?.total], ["sueno_puntos", (d, p) => p.sueno?.total], ["actividad", (d, p) => p.actividad?.total],
+      ["dormido_min", (d) => d.sueno?.dormido], ["en_cama_min", (d) => d.sueno?.enCama], ["profundo_min", (d) => d.sueno?.etapas?.DEEP], ["rem_min", (d) => d.sueno?.etapas?.REM],
+      ["ligero_min", (d) => d.sueno?.etapas?.LIGHT], ["despierto_min", (d) => d.sueno?.etapas?.AWAKE], ["inicio_sueno", (d) => d.sueno?.inicio], ["fin_sueno", (d) => d.sueno?.fin],
+      ["fc_reposo", (d) => d.fc_reposo], ["vfc_ms", (d) => d.vfc], ["spo2", (d) => d.spo2], ["spo2_min", (d) => d.spo2_noche?.minimo], ["spo2_bajo90_min", (d) => d.spo2_noche?.bajo90],
+      ["caidas_spo2_hora", (d) => d.spo2_noche?.indice], ["resp_rpm", (d) => d.resp], ["temp_delta_c", (d) => { const t = tempDelta(d); return t == null ? null : Math.round(t * 100) / 100; }],
+      ["pasos", (d) => d.pasos], ["minutos_zona", (d) => d.azm],
+    ];
+    const celda = (v) => (v == null ? "" : /[",\n]/.test(String(v)) ? `"${String(v).replaceAll('"', '""')}"` : String(v));
+    const filas = state.dias.map((d) => { const p = state.puntos.get(d.fecha) || {}; return cols.map(([, f]) => celda(f(d, p))).join(","); });
+    const blob = new Blob(["\ufeff" + [cols.map(([k]) => k).join(","), ...filas].join("\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `fitbit-air-${hoyISO()}.csv`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
   // ---------- Medir (sesión con el Fitbit Air) ----------
@@ -589,6 +608,7 @@
   // ---------- Eventos ----------
   document.addEventListener("click", async (e) => {
     if (e.target.closest("#btnMedir")) { iniciarSesion(); return; }
+    if (e.target.closest("#btnCsv")) { descargarCsv(); return; }
     if (e.target.closest("#btnVivo")) { iniciarVivo(); return; }
     if (e.target.closest("#vivoTerminar")) { terminarVivo(); return; }
     if (e.target.closest("#btnVerSesion")) { retomarSesion(); if ($("#sesion").hidden) esperar(leerSesion()); return; }

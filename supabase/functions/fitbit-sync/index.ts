@@ -3,7 +3,8 @@
 //
 // POST (con la sesión de Supabase del usuario): { accion: "estado" | "conectar" | "sincronizar" | "fcReciente" | "sesion" | "desconectar" }
 // GET  ?code=…&state=…  → regreso de Google OAuth (la redirect URI registrada es la URL de esta función)
-// POST con header x-cron-secret → sincroniza a todos los conectados (para pg_cron)
+// POST de pg_cron → sincroniza a todos los conectados. Se autentica como las demás funciones del proyecto:
+// Authorization: Bearer <app_settings.edge_function_secret> (vía call_edge_function), o x-cron-secret = SALUD_CRON_SECRET.
 //
 // Secretos: GOOGLE_CLIENT_SECRET (y GOOGLE_CLIENT_ID para usar otro cliente). Opcionales: SALUD_CRON_SECRET, SALUD_STATE_SECRET (por default se usa
 // la service role key para firmar), SALUD_APP_URL (por default se regresa al sitio desde donde se pidió conectar).
@@ -55,6 +56,15 @@ async function usuario(req: Request) {
   const { data } = await db.auth.getUser(jwt);
   const email = data.user?.email?.toLowerCase() || "";
   return email && (await autorizado(email)) ? email : "";
+}
+
+async function esCron(req: Request) {
+  const cron = env("SALUD_CRON_SECRET");
+  if (cron && req.headers.get("x-cron-secret") === cron) return true;
+  const bearer = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!bearer || bearer.split(".").length === 3) return false; // un JWT es sesión de usuario, no cron
+  const { data } = await db.from("app_settings").select("value").eq("key", "edge_function_secret").maybeSingle();
+  return !!data?.value && bearer === data.value;
 }
 
 // state firmado (HMAC) para que el regreso de Google solo se acepte si salió de un usuario autorizado
@@ -240,8 +250,7 @@ Deno.serve(async (req) => {
     if (req.method !== "POST") return json({ error: "Método no permitido" }, 405);
     const body = await req.json().catch(() => ({}));
 
-    const cron = env("SALUD_CRON_SECRET");
-    if (cron && req.headers.get("x-cron-secret") === cron) {
+    if (await esCron(req)) {
       const { data } = await db.from("salud_conexion").select("email");
       const res = await Promise.allSettled((data || []).map((c) => sincronizar(c.email, 4)));
       return json({ ok: res.filter((r) => r.status === "fulfilled").length, fallidos: res.filter((r) => r.status === "rejected").length });

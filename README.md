@@ -37,16 +37,7 @@ Fitbit Air ─▶ app Google Health ─▶ Google Health API v4 ─▶ Edge Func
    ```
 5. En el teléfono, la app **Google Health** debe estar vinculada a la cuenta de Google; si no, la API responde `ACCOUNT_NOT_LINKED`.
 
-La app sincroniza sola al abrirla si pasaron más de 2 horas. Para sincronizar en segundo plano, define `SALUD_CRON_SECRET` y prográmalo con `pg_cron` + `pg_net`:
-
-```sql
-select cron.schedule('salud-fitbit', '17 */3 * * *', $$
-  select net.http_post(
-    url := 'https://uzyzeaoliwzkmxiaudso.supabase.co/functions/v1/fitbit-sync',
-    headers := jsonb_build_object('Content-Type', 'application/json', 'x-cron-secret', '<SALUD_CRON_SECRET>'),
-    body := '{}'::jsonb);
-$$);
-```
+La sincronización corre sola dos veces al día (7:40 y 21:40, hora de CDMX) con la tarea `salud-fitbit-sync` de pg_cron, que llama a la función con `call_edge_function` (la función acepta el mismo `app_settings.edge_function_secret` que usan las demás tareas del proyecto). La app también sincroniza al abrirla si pasaron más de 2 horas. En **Tabla → Descargar CSV** se baja un renglón por día para analizar en Excel o Sheets.
 
 ### Pruebas
 
