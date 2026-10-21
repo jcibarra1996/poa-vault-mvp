@@ -37,7 +37,7 @@ Fitbit Air ─▶ app Google Health ─▶ Google Health API v4 ─▶ Edge Func
    ```
 5. En el teléfono, la app **Google Health** debe estar vinculada a la cuenta de Google; si no, la API responde `ACCOUNT_NOT_LINKED`.
 
-La sincronización corre sola dos veces al día (7:40 y 21:40, hora de CDMX) con la tarea `salud-fitbit-sync` de pg_cron, que llama a la función con `call_edge_function` (la función acepta el mismo `app_settings.edge_function_secret` que usan las demás tareas del proyecto). La app también sincroniza al abrirla si pasaron más de 2 horas. En **Tabla → Descargar CSV** se baja un renglón por día para analizar en Excel o Sheets.
+La sincronización corre sola dos veces al día (5:30 y 21:40, hora de CDMX) con las tareas `salud-fitbit-sync-manana` y `salud-fitbit-sync-noche` de pg_cron, que llama a la función con `call_edge_function` (la función acepta el mismo `app_settings.edge_function_secret` que usan las demás tareas del proyecto). La app también sincroniza al abrirla si pasaron más de 2 horas. En **Tabla → Descargar CSV** se baja un renglón por día para analizar en Excel o Sheets.
 
 ### Pruebas
 

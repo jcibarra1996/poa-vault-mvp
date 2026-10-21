@@ -292,7 +292,7 @@
         <td class="num">${d.sueno?.dormido != null ? P.hm(d.sueno.dormido) : "—"}</td><td class="num">${fmtNum(d.fc_reposo)}</td><td class="num">${fmtNum(d.vfc)}</td>
         <td class="num">${fmtNum(d.spo2, 1)}</td><td class="num">${fmtNum(d.spo2_noche?.minimo)}</td><td class="num">${fmtNum(d.resp, 1)}</td><td class="num">${signo(tempDelta(d))}</td><td class="num">${fmtNum(d.pasos)}</td><td class="num">${fmtNum(d.azm)}</td></tr>`;
     }).join("");
-    return `<div class="toolbar" style="justify-content:space-between"><span class="small muted">${state.dias.length} días · se sincroniza solo a las 7:40 y 21:40</span><button class="btn" id="btnCsv">Descargar CSV</button></div>
+    return `<div class="toolbar" style="justify-content:space-between"><span class="small muted">${state.dias.length} días · se sincroniza solo a las 5:30 y 21:40</span><button class="btn" id="btnCsv">Descargar CSV</button></div>
       <div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th class="num">Recup.</th><th class="num">Sueño</th><th class="num">Activ.</th><th class="num">Dormido</th><th class="num">FC rep.</th><th class="num">VFC ms</th><th class="num">SpO2 %</th><th class="num">SpO2 mín.</th><th class="num">Resp.</th><th class="num">Temp Δ</th><th class="num">Pasos</th><th class="num">Min. zona</th></tr></thead><tbody>${filas}</tbody></table></div>`;
   }
 
