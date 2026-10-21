@@ -153,9 +153,13 @@
     </div>`;
   }
 
-  const ETAPAS = [["AWAKE", "Despierto", "--awake"], ["REM", "REM", "--rem"], ["LIGHT", "Ligero", "--light"], ["DEEP", "Profundo", "--deep"]];
+  const ETAPAS_FASES = [["AWAKE", "Despierto", "--awake"], ["REM", "REM", "--rem"], ["LIGHT", "Ligero", "--light"], ["DEEP", "Profundo", "--deep"]];
+  // Registro clásico (sin fases): pasa cuando la noche se edita a mano o el reloj no logró calcular fases
+  const ETAPAS_CLASICO = [["AWAKE", "Despierto", "--awake"], ["RESTLESS", "Inquieto", "--rem"], ["ASLEEP", "Dormido", "--light"]];
   function hipnograma(s) {
-    const W = 720, rowH = 30, gutter = 72, top = 6, H = top + rowH * 4 + 24;
+    const conFases = s.hipnograma.some(([k]) => ["DEEP", "REM", "LIGHT"].includes(k));
+    const ETAPAS = conFases ? ETAPAS_FASES : ETAPAS_CLASICO;
+    const W = 720, rowH = 30, gutter = 72, top = 6, H = top + rowH * ETAPAS.length + 24;
     const t0 = Date.parse(s.inicio), t1 = Date.parse(s.fin), span = Math.max(1, t1 - t0);
     const x = (ms) => gutter + ((ms - t0) / span) * (W - gutter - 24);
     const fila = Object.fromEntries(ETAPAS.map(([k], i) => [k, i]));
@@ -167,11 +171,12 @@
     const primera = Math.ceil((t0 + s.offset * 1000) / 3600000) * 3600000 - s.offset * 1000;
     for (let t = primera; t < t1; t += 3600000) horas.push(t);
     const paso = horas.length > 8 ? 2 : 1;
-    const ejes = horas.filter((_, i) => i % paso === 0).map((t) => `<line class="grid" x1="${x(t)}" x2="${x(t)}" y1="${top}" y2="${top + rowH * 4}"/><text class="lbl" x="${x(t)}" y="${H - 6}" text-anchor="middle">${horaLocal(t, s.offset)}</text>`).join("");
+    const ejes = horas.filter((_, i) => i % paso === 0).map((t) => `<line class="grid" x1="${x(t)}" x2="${x(t)}" y1="${top}" y2="${top + rowH * ETAPAS.length}"/><text class="lbl" x="${x(t)}" y="${H - 6}" text-anchor="middle">${horaLocal(t, s.offset)}</text>`).join("");
     const filas = ETAPAS.map(([, lbl], i) => `<text class="lbl" x="0" y="${top + i * rowH + rowH / 2 + 4}">${lbl}</text>`).join("");
     const et = s.etapas || {};
     return `<section class="box hypno">
-      <h3>Etapas de sueño · ${horaLocal(t0, s.offset)} a ${horaLocal(t1, s.offset)}</h3>
+      <h3>${conFases ? "Etapas de sueño" : "Sueño"} · ${horaLocal(t0, s.offset)} a ${horaLocal(t1, s.offset)}${s.siesta ? " · siesta" : ""}</h3>
+      ${!conFases ? `<p class="small muted">${s.editado ? "Esta noche se editó a mano en la app Google Health, así que Google ya no guarda sus fases (profundo, REM, ligero)." : "El Fitbit no calculó fases para esta noche; pasa si duermes menos de 3 h o el reloj está flojo."}</p>` : ""}
       <div class="scroll"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Hipnograma de la noche">${ejes}${filas}${segs}</svg></div>
       <div class="legend">${ETAPAS.map(([k, lbl, c]) => `<span><i style="background:var(${c})"></i>${lbl} ${et[k] != null ? `· ${P.hm(et[k])}` : ""}</span>`).join("")}</div>
     </section>`;

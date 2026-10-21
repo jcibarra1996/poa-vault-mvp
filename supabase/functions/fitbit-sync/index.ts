@@ -117,13 +117,13 @@ async function google(at: string, ruta: string, init: RequestInit = {}) {
   return data;
 }
 
-async function lista(at: string, tipo: string, filtro: string, pageSize: number) {
+async function lista(at: string, tipo: string, filtro: string, pageSize: number, metodo = "") {
   const out: Obj[] = [];
   let pageToken = "";
   for (let i = 0; i < 40; i++) {
     const q = new URLSearchParams({ filter: filtro, pageSize: String(pageSize) });
     if (pageToken) q.set("pageToken", pageToken);
-    const d = await google(at, `/dataTypes/${tipo}/dataPoints?${q}`);
+    const d = await google(at, `/dataTypes/${tipo}/dataPoints${metodo}?${q}`);
     out.push(...(d.dataPoints || []));
     pageToken = d.nextPageToken || "";
     if (!pageToken) break;
@@ -158,7 +158,17 @@ async function sincronizar(email: string, numDias: number) {
   const tareas: [string, () => Promise<void>][] = [
     ["pasos", async () => leerPasos(dias, await rollupDiario(at, "steps", desde, hasta))],
     ["minutos en zona", async () => leerAzm(dias, await lista(at, "active-zone-minutes", `active_zone_minutes.interval.civil_start_time >= "${desde}T00:00:00" AND active_zone_minutes.interval.civil_start_time < "${hasta}T00:00:00"`, 10000))],
-    ["sueño", async () => leerSueno(dias, await lista(at, "sleep", `sleep.interval.civil_end_time >= "${desde}"`, 25))],
+    ["sueño", async () => {
+      // list y reconcile por separado: si alguno omite noches, la unión las recupera (leerSueno elige una por día)
+      const filtro = `sleep.interval.civil_end_time >= "${desde}"`;
+      const [crudos, reconciliados] = await Promise.all([
+        lista(at, "sleep", filtro, 25),
+        lista(at, "sleep", filtro, 25, ":reconcile").catch((e) => { console.log("sleep reconcile:", String(e.message || e)); return []; }),
+      ]);
+      const noches = (xs: Obj[]) => xs.map((p) => `${p.sleep?.interval?.endTime?.slice(0, 10)}${p.sleep?.metadata?.nap ? "(siesta)" : ""}`).join(",");
+      console.log(`sleep: list=${crudos.length} [${noches(crudos)}] reconcile=${reconciliados.length} [${noches(reconciliados)}]`);
+      leerSueno(dias, [...crudos, ...reconciliados]);
+    }],
     ...DIARIOS.map((def): [string, () => Promise<void>] => [def.tipo, async () => leerDiario(dias, await lista(at, def.tipo, filtroDiario(def.tipo, desde, hasta), 1000), def)]),
   ];
   const res = await Promise.allSettled(tareas.map(([, f]) => f()));

@@ -83,3 +83,19 @@ test("sesión: promedio dentro de la ventana y si ya sincronizó completa", asyn
   assert.equal(parcial.completa, false);
   assert.equal(parcial.vfc, null);
 });
+
+test("sueño real: mainSleep, siesta, clásico editado a mano", () => {
+  const d = new Dias();
+  const siesta = { sleep: { interval: { startTime: "2026-10-21T19:00:00Z", endTime: "2026-10-21T20:30:00Z", endUtcOffset: "-21600s" }, type: "STAGES", metadata: { mainSleep: true, nap: true }, summary: { minutesAsleep: "85" } } };
+  const noche = { sleep: { interval: { startTime: "2026-10-21T05:00:00Z", endTime: "2026-10-21T12:00:00Z", endUtcOffset: "-21600s" }, type: "CLASSIC",
+    metadata: { mainSleep: true, processed: true, manuallyEdited: true },
+    summary: { minutesAsleep: "420", minutesInSleepPeriod: "420", stagesSummary: [{ type: "ASLEEP", count: "1", minutes: "400" }, { type: "RESTLESS", count: "3", minutes: "12" }, { type: "AWAKE", count: "2", minutes: "8" }] },
+    stages: [{ type: "ASLEEP", startTime: "2026-10-21T05:00:00Z", endTime: "2026-10-21T12:00:00Z" }] } };
+  leerSueno(d, [siesta, noche]);
+  const s = d.lista()[0].sueno!;
+  assert.equal(s.dormido, 420);
+  assert.equal(s.tipo, "CLASSIC");
+  assert.equal(s.editado, true);
+  assert.equal(s.despertares, 5);
+  assert.equal(s.etapas.ASLEEP, 400);
+});

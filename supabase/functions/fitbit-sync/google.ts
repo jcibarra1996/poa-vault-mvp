@@ -11,7 +11,7 @@ export type Sueno = {
   inicio: string; fin: string; offset: number;
   enCama: number | null; dormido: number | null; despierto: number | null; latencia: number | null;
   etapas: Record<string, number>; despertares: number | null; tipo: string;
-  hipnograma: [string, string, string][];
+  hipnograma: [string, string, string][]; editado: boolean; siesta: boolean;
 };
 export type Dia = {
   fecha: string; pasos?: number; azm?: number; fc_reposo?: number; vfc?: number; spo2?: number; resp?: number;
@@ -94,11 +94,11 @@ export function resumirSueno(s: Obj): Sueno {
   if (Array.isArray(sum.stagesSummary) && sum.stagesSummary.length) {
     for (const e of sum.stagesSummary) {
       etapas[e.type] = num(e.minutes) || 0;
-      if (e.type === "AWAKE") despertares = num(e.count) ?? null;
+      if (e.type === "AWAKE" || e.type === "RESTLESS") despertares = (despertares || 0) + (num(e.count) || 0);
     }
   } else {
     for (const e of stages) etapas[e.type] = (etapas[e.type] || 0) + (Date.parse(e.endTime) - Date.parse(e.startTime)) / 60000;
-    despertares = stages.filter((e) => e.type === "AWAKE").length || null;
+    despertares = stages.filter((e) => e.type === "AWAKE" || e.type === "RESTLESS").length || null;
   }
   return {
     inicio: i.startTime, fin: i.endTime, offset: segundos(i.endUtcOffset),
@@ -106,19 +106,21 @@ export function resumirSueno(s: Obj): Sueno {
     despierto: num(sum.minutesAwake) ?? null, latencia: num(sum.minutesToFallAsleep) ?? null,
     etapas, despertares, tipo: s.type || "",
     hipnograma: stages.map((e) => [e.type, e.startTime, e.endTime]),
+    editado: s.metadata?.manuallyEdited === true, siesta: s.metadata?.nap === true,
   };
 }
 
-// Una noche por día (el día en que despiertas): la principal, o la más larga si no viene marcada
+// Una noche por día (el día en que despiertas): primero la principal que no es siesta, luego la más larga.
+// Google marca la principal con metadata.mainSleep (la documentación muestra metadata.main).
 export function leerSueno(dias: Dias, puntos: Obj[]) {
   const elegido = new Map<string, Obj>();
   const largo = (s: Obj) => Date.parse(s.interval?.endTime) - Date.parse(s.interval?.startTime);
+  const rango = (s: Obj) => { const m = s.metadata || {}; const principal = m.mainSleep === true || m.main === true; return principal && m.nap !== true ? 2 : principal ? 1 : 0; };
   for (const p of puntos) {
     const s = p.sleep; if (!s?.interval?.endTime) continue;
     const fecha = fechaLocal(s.interval.endTime, s.interval.endUtcOffset);
     const prev = elegido.get(fecha);
-    const principal = (x: Obj) => x.metadata?.main === true;
-    if (!prev || (principal(s) && !principal(prev)) || (principal(s) === principal(prev) && largo(s) > largo(prev))) elegido.set(fecha, s);
+    if (!prev || rango(s) > rango(prev) || (rango(s) === rango(prev) && largo(s) > largo(prev))) elegido.set(fecha, s);
   }
   for (const [fecha, s] of elegido) {
     dias.poner(fecha, { sueno: resumirSueno(s) });
